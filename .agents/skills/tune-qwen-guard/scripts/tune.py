@@ -128,11 +128,20 @@ def collect(request, template, train, validation):
         raise ValueError("Ollama's generation context differs from the rendered training input")
 
     texts = [render(row) + "Safety:" for row in train + validation]
-    # Constrain changes at neighboring generation positions to preserve the answer format.
-    for row in train[::12]:
-        text = render(row)
-        label = "Safe" if row["is_safe"] == "1" else "Unsafe"
-        texts.extend([text, text + "Safety", text + "Safety: " + label])
+    # Sample within each label because the TSV interleaves safe and unsafe replies.
+    # These positions anchor the original logits; they do not provide category labels.
+    for label, words in (("1", ("Safe",)), ("0", ("Unsafe", "Controversial"))):
+        examples = [row for row in train if row["is_safe"] == label]
+        for row in examples[::12]:
+            text = render(row)
+            texts.extend((text, text + "Safety"))
+            for word in words:
+                answer = text + "Safety: " + word
+                texts.extend((answer, answer + "\nCategories:"))
+            if label == "1":
+                texts.append(text + "Safety: Safe\nCategories: None")
+            else:
+                texts.append(text + "Safety: Cont")
     vectors = []
     with ThreadPoolExecutor(max_workers=4) as pool:
         for i, vector in enumerate(pool.map(embed, texts), 1):
