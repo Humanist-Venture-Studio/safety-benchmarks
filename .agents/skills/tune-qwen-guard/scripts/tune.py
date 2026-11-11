@@ -151,7 +151,7 @@ def collect(request, template, train, validation):
     return ids, np.stack(vectors)
 
 
-def fit(weights, vectors, train, validation):
+def fit(weights, vectors, train, validation, penalties=(0.4, 0.04, 0.004)):
     n, end = len(train), len(train) + len(validation)
     labels = np.array([1 if row["is_safe"] == "1" else -1 for row in train + validation])
     scale = np.sqrt(vectors[:n].std(axis=0).clip(0.08))
@@ -160,7 +160,7 @@ def fit(weights, vectors, train, validation):
     logits = vectors[:n] @ weights.T
     offset = (logits[:, 0] - logits[:, 1:].max(axis=1)) * labels[:n]
     best = None
-    for penalty in (0.4, 0.04, 0.004):
+    for penalty in penalties:
         def objective(w):
             margin = offset + features @ w
             drift = anchors @ w

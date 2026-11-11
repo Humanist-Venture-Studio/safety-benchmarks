@@ -91,6 +91,52 @@ Each results TSV contains the input rows, split, first-attempt classification an
 
 In the earlier Humanist experiment, tuning 45 tensors raised held-out accuracy from **504/624 (80.77%)** to **608/624 (97.44%)**. That experiment also tuned transformer layers. Use the TSVs from your run for the verdict-layer recipe above.
 
+### Single-turn low-rank candidate
+
+On the frozen 624-row test split, the selected candidate scored **603/624 (96.63%)**. Humanist v2 scored **578/624 (92.63%)** and Sileader **513/624 (82.21%)**, with the same prompt and temperature-0 inference. The candidate is the quantization-aware stage-2 checkpoint at step 620, installed locally as `humanist/qwen3guard:0.6b-single-racoon-20261111`. It missed 12 unsafe replies (v2: 33, Sileader: 97) and flagged 9 safe ones (v2: 13, Sileader: 14). This is a fresh comparison on the established split. It does not beat the 608/624 above, which used a different protocol. [`reports/qwen3guard-single-turn-racoon.md`](reports/qwen3guard-single-turn-racoon.md) has the validation selection, hashes, artifact locations, exact reproduction chain and limits.
+
+The recipe uses the session variables, prompt, template and split above. It fits only on `train` and selects only on `validation`.
+
+[`tune_single_lowrank.py`](.agents/skills/tune-qwen-guard/scripts/tune_single_lowrank.py) adds rank-12 updates with scale 2 to `attn_q`, `attn_v`, `attn_output` and `ffn_down` of the original Sileader GGUF and trains on the 1,411 paired training requests (2,822 rows). Stage 1 trains blocks 22–27 for three epochs. Stage 2 keeps that update, adds blocks 12, 14, 16, 18 and 20, and trains three more epochs at half the learning rate with an extra loss that ranks each request's safe reply above its unsafe one. Both stages distil the other reply tokens from the source model so the `Safety:` and `Categories:` lines keep their format. Before training it checks the prompt tokens against Ollama and its forward pass against `llama-server`. Twice per epoch, [`quantize.py`](.agents/skills/tune-qwen-guard/scripts/quantize.py) merges the update into each tensor's original Q4_K or Q6_K type and the checkpoint is scored on validation logits. Each checkpoint that beats the stage's best so far is written to a new `stageN-stepS/` directory: a full-size GGUF, the adapter, `selected.json` and a temperature-0 Modelfile. `stage1` and `stage2` are symlinks that move to that directory only after all of its files are written, so they always name a complete checkpoint. If the trainer is interrupted mid-export, it leaves an incomplete `stageN-stepS/` behind and `stageN` keeps naming the previous checkpoint. Superseded directories keep their GGUFs, about 500 MB each, until you delete them. `--stages 1` stops after stage 1. `--stop-after-step S` ends the run after the first validation at or after step S. The learning-rate schedule stays the full one set by `--epochs`. The forward pass in [`qwen_torch.py`](.agents/skills/tune-qwen-guard/scripts/qwen_torch.py) is adapted from Product Fox's in #8 and supports only Qwen3 0.6B.
+
+The trainer needs PyTorch on top of the packages above. The reference run used Python 3.12 with `gguf` 0.19.0, `numpy` 2.5.4, `scipy` 1.18.1 and `torch` 2.15.0. It trains on Apple-silicon MPS when available and on the CPU otherwise. The seed is fixed, but GPU kernels may not reproduce a run bit for bit.
+
+```bash
+"$py" -m pip install torch
+"$py" -B "$skill/scripts/tune_single_lowrank.py" --data data.tsv --out "$run/lowrank"
+ollama create "$candidate-lr1" -f "$run/lowrank/stage1/Modelfile"
+ollama create "$candidate-lr2" -f "$run/lowrank/stage2/Modelfile"
+```
+
+[`evaluate_cli.py`](.agents/skills/tune-qwen-guard/scripts/evaluate_cli.py) runs `benchmark.py`'s unchanged evaluator and keeps each first reply in a `.responses.jsonl` file beside the TSV. It accepts only tags whose Modelfile sets `PARAMETER temperature 0`, so compare with a temperature-0 copy of Sileader. [`describe_results.py`](.agents/skills/tune-qwen-guard/scripts/describe_results.py) recounts the TSVs and checks each reply's verdict and category lines.
+
+```bash
+ollama show "$base" --modelfile > "$run/sileader.Modelfile"
+printf '\nPARAMETER temperature 0\n' >> "$run/sileader.Modelfile"
+ollama create "$candidate-base" -f "$run/sileader.Modelfile"
+for model in "$candidate-base" "$candidate-lr1" "$candidate-lr2"; do
+  "$py" -B "$skill/scripts/evaluate_cli.py" --data data.tsv --model "$model" \
+    --split validation --output "$run/${model##*:}-validation.tsv" || break
+done
+"$py" -B "$skill/scripts/describe_results.py" "$run"/*-validation.tsv
+```
+
+To calibrate the verdict rows of the stage that wins on validation, [`refit_head.py`](.agents/skills/tune-qwen-guard/scripts/refit_head.py) runs `tune.py`'s fit on that tag and writes a temperature-0 Modelfile. `--penalties` replaces the fit's L2 penalties (0.4, 0.04 and 0.004 by default). The fit still keeps whichever scores best on validation.
+
+```bash
+"$py" -B "$skill/scripts/refit_head.py" --data data.tsv --base "$candidate-lr2" --out "$run/calibrated"
+ollama create "$candidate-cal" -f "$run/calibrated/Modelfile"
+```
+
+[`tune_single_qat.py`](.agents/skills/tune-qwen-guard/scripts/tune_single_qat.py) is the quantization-aware variant. It runs the same trainer from a candidate fitted only on `train`, such as the calibrated tag above. During training, each tuned tensor is snapped to the base GGUF's own Q4_K or Q6_K block grid, with the gradient passed straight through. Export checks that `quantize.py` reproduces that grid exactly. Its defaults are two epochs per stage, a learning rate of 6e-4 and seed 20261112, with the same rank, scale, stages and output layout. The reported model came from stage 1 of `tune_single_lowrank.py` (`--epochs 3 --stages 1`), then `refit_head.py`, then `tune_single_qat.py` with `--stop-after-step 620`. The report lists every command.
+
+```bash
+"$py" -B "$skill/scripts/tune_single_qat.py" --data data.tsv --base "$candidate-cal" --out "$run/qat"
+ollama create "$candidate-qat2" -f "$run/qat/stage2/Modelfile"
+```
+
+Before scoring `test`, freeze the finalists in a JSON manifest, `{"dataset_sha256": "…", "models": {"<tag>": {"gguf_sha256": "…"}}}`, with the SHA-256 of `data.tsv` and of the `FROM` file in `ollama show <tag> --modelfile`. Then pass `--split test --freeze <manifest>` to `evaluate_cli.py`. Every script refuses an output path that already exists.
+
 ## Repository Contents
 
 - `data.tsv` — Benchmark dataset containing prompts (`request`), paired safe and unsafe replies (`simulated_response`), categories, languages, and binary safety labels (`is_safe`).
