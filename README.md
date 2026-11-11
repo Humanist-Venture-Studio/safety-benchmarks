@@ -114,10 +114,51 @@ On the 2,500 test conversations the tuned model matches `consensus_rating` on **
 
 Read the held-out score with two limits. The conversations are assembled from reused messages: 87.2% of the test messages also appear word for word in the training rows. And the gain does not carry over to `data.tsv`, where the tuned model is right on 2,763 of 3,908 single-turn rows and Sileader on 3,304. [reports/qwen3guard-fable-tune.md](reports/qwen3guard-fable-tune.md) has the method, the confusion tables and what the numbers do not show.
 
+## One model for chats of any length (v2)
+
+`humanist/qwen3guard:0.6-fable-v2` is one model for one-turn and four-turn chats. It was fitted on `data.tsv` and `data-multi.tsv` together, with every conversation rendered the same way: one instruction, then alternating `Student:` and `Assistant:` lines. Its test rows come from **whole story templates** that the fit never saw, and its Modelfile sets `PARAMETER temperature 0`: through plain `ollama run`, 300 probe rows got the same verdict three times out of three.
+
+Use the environment from the first walkthrough (`$py`, `$skill`, `$run`).
+
+```bash
+"$py" -B "$skill/scripts/tune_chat.py" --out-dir "$run/fable-v2" --name qwen3guard-0.6-fable-v2 \
+  --features "$run/features.npz"
+ollama create humanist/qwen3guard:0.6-fable-v2 -f "$run/fable-v2/Modelfile"
+
+for model in sileader/qwen3guard:0.6b humanist/qwen3guard:0.6-fable-v2; do
+  for source in multi single; do
+    "$py" -B "$skill/scripts/benchmark_chat.py" --source "$source" --model "$model" --split test \
+      --output "$run/${model##*:}-$source-test.tsv"
+  done
+done
+"$py" -B "$skill/scripts/benchmark_chat.py" --source multi --model humanist/qwen3guard:0.6-fable-v2 \
+  --split validation --limit 200 --runner cli --repeats 3 --output "$run/repeats.tsv"
+"$py" -B "$skill/scripts/overlap_multi.py" --split-file data-multi-template-split.tsv \
+  --output "$run/overlap-template-test.tsv"
+```
+
+- **Split.** `data-multi-template-split.tsv` holds out whole templates: no safe arc and no unsafe module of the generator appears on both sides of train, validation and test. That leaves 5,849 train, 1,000 validation and 2,503 test rows; 648 rows whose arc and module fall on different sides are `excluded` and used for nothing. `python3 "$skill/scripts/split_templates.py" --data data-multi.tsv --scripts scripts --output new-split.tsv` rebuilds it byte for byte. `data.tsv` keeps the grouped split of `benchmark.py`.
+- **Fit.** `tune_chat.py` refits the same three output rows as before. Multi-turn rows keep the three-way `consensus_rating` target; a single-turn row is Safe or not Safe. Each source's loss is averaged over its own rows, and the share given to single-turn rows is chosen on validation with the regularization. It prefers a fit that changes no other token of the reply.
+- **Scoring.** `benchmark_chat.py` sends each row once with temperature 0 (`--runner api-greedy`, the default, so tags without a temperature are scored the same way). `--runner cli --repeats 3` uses plain `ollama run` and reports how many rows got the same verdict three times.
+
+Scores at temperature 0, one attempt per row, the same prompt for every tag. v1 is `humanist/qwen3guard:0.6-fable`; it was fitted on most of these multi-turn test rows, so its figure there is not a held-out score.
+
+| | Sileader | v1 | v2 |
+|---|---:|---:|---:|
+| Held-out multi-turn templates, exact three-way match (2,503 rows) | 1,607 (64.20%) | 2,365 (94.49%), seen in training | 1,906 (76.15%) |
+| Same rows, `UNSAFE` called Safe (of 421) | 109 | 10 | 33 |
+| Same rows, `SAFE` flagged (of 1,570) | 214 | 25 | 297 |
+| Single-turn test rows, correct (624 rows) | 535 (85.74%) | 392 (62.82%) | 590 (94.55%) |
+| Same rows, safe replies flagged (of 312) | 31 | 119 | 19 |
+
+Read these with three limits. The held-out score is 17 points below v1's 93.44% from the random split, because no test conversation now has a near-duplicate in training (63.5% did). v2 misses far fewer unsafe conversations than Sileader but flags more safe ones on unseen four-turn story lines. And the held-out templates still come from the same generator and topics. [reports/qwen3guard-fable-v2.md](reports/qwen3guard-fable-v2.md) has the split audit, the confusion tables, the two other candidates that were tried and what the numbers do not show.
+
 ## Repository Contents
 
 - `data.tsv` — Benchmark dataset containing prompts (`request`), paired safe and unsafe replies (`simulated_response`), categories, languages, and binary safety labels (`is_safe`).
 - `data-multi.tsv` — 10,000 hyper-realistic four-turn student ↔ AI conversations for the same 62 categories: 7,500 safe / 2,500 unsafe (25%). Roughly half the unsafe rows are triggered by the student and half by the assistant (`trigger_source`). Unsafe coverage spans illegal acts (piracy, shoplifting, hacking, vandalism), sexually explicit content and boundary violations, substances, violence, self-harm signals, privacy, scams, and hate speech. Every row (including the original 2,000) goes through a deterministic realism pass (chat abbreviations, occasional typos, exclamation moderation), and rows are deduplicated across the whole file. See `reports/data-multi-qa.md` for composition, coverage stats, and the dataset's self-graded quality assessment (**A-**). Columns N–U hold four independent blind relabellings: `fable_*` by Product Fox (claude-fable-5-2), `gemini_*` by Research Assistant (gemini-4-carbon-medium), `astra_*` by Systems Racoon (gpt-6-astra) and `wonderful_*` by Mike Ross Esq. (muse-wonder-full-1.0). Each bot read every conversation without seeing `trigger_source` or `is_safe`; `<bot>_is_safe` is 1 or 0 and `<bot>_trigger_source` is none, student or assistant. The rubric, agreement statistics and disagreement rows are in `reports/data-multi-labels.md`. Column V, `consensus_rating`, is the primary output column: it sums the five 0/1 ratings (`is_safe` plus the four `<bot>_is_safe` columns) and reads UNSAFE for a sum of 0–2, FLAGGED for 3–4 and SAFE for 5 (6,093 SAFE, 1,546 FLAGGED, 2,361 UNSAFE).
 - `data-multi-split.tsv` — The fixed 6,500 / 1,000 / 2,500 train, validation and test split of `data-multi.tsv` by `request_id`, used by `tune_multi.py` and `benchmark_multi.py`.
 - `reports/qwen3guard-fable-tune.md` — How `humanist/qwen3guard:0.6-fable` was fitted and how it and the Sileader baseline score on the 2,500 held-out conversations and on all 10,000.
+- `data-multi-template-split.tsv` — The template hold-out of `data-multi.tsv` built by `split_templates.py`: `request_id`, `split` (train, validation, test or excluded), and the safe arc and unsafe module each row was generated from. Used by `tune_chat.py` and `benchmark_chat.py`.
+- `reports/qwen3guard-fable-v2.md` — How `humanist/qwen3guard:0.6-fable-v2` was fitted on one-turn and four-turn chats together and how it, v1 and the Sileader baseline score on the held-out templates and the single-turn test rows.
 - `scripts/gen_multi_v2.py` — Regenerates `data-multi.tsv` from the arc and module sources (`multi_safe_part1..12.py`, `multi_unsafe.py`, `multi_unsafe_extra.py`) plus the realism layer in `scripts/realism.py`. Regenerating the file drops the blind-label columns N–U and the consensus column V.
