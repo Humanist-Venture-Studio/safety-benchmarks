@@ -1,3 +1,5 @@
 /sileader-qwen3guard-0.6b/
 /humanist-qwen3guard-0.6b-safe/
+/humanist-qwen3guard-0.6-fable/
 __pycache__/
+.DS_Store
