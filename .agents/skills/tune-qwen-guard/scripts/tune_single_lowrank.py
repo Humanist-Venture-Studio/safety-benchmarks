@@ -4,14 +4,19 @@ Uses benchmark.py's exact prompt/split and Sileader's own template; only train
 and validation rows are encoded. Stage 1 fits the last six blocks; stage 2 adds
 even blocks 12..20, retains stage 1 and adds a paired ranking loss. Every
 checkpoint is merged into the original quantization types (quantize.py) and
-selected on quantized validation logits; each stage's best is exported to
-OUT/stage1 and OUT/stage2. Finalists must separately pass benchmark.py via the
-Ollama CLI (evaluate_cli.py). OUT must not exist yet.
+selected on quantized validation logits. Each improvement is written to a new
+directory OUT/stageN-stepS; OUT/stageN is a symlink to the best complete one,
+switched only after all of its files are written. A run interrupted mid-export
+leaves that incomplete stageN-stepS directory behind, and OUT/stageN still names
+the previous complete checkpoint (or does not exist yet). --stages 1 stops
+after stage 1. Finalists must separately pass benchmark.py via the Ollama CLI
+(evaluate_cli.py). OUT must not exist yet.
 """
 import argparse
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import random
 import re
@@ -28,6 +33,7 @@ from qwen_torch import hidden, final
 from quantize import pack
 
 BUNDLED_SERVER = Path('/Applications/Ollama.app/Contents/Resources/llama-server')
+DEFAULT_SERVER = shutil.which('llama-server') or (str(BUNDLED_SERVER) if BUNDLED_SERVER.is_file() else 'llama-server')
 PARTS = ('attn_q', 'attn_v', 'attn_output', 'ffn_down')
 
 def digest(path):
@@ -107,8 +113,11 @@ def rounded(w,delta,tensors):
     return out,encoded
 
 def save_export(args,stage,model,definition,tensors,packed,delta,report):
-    target=args.out/f'stage{stage}'
-    target.mkdir(exist_ok=True)
+    # Never rewrite a checkpoint: fill a new directory, then repoint stageN at it
+    # with one rename, so stageN always names a complete checkpoint.
+    checkpoint=f'stage{stage}-step{report["step"]}'
+    target=args.out/checkpoint
+    target.mkdir()
     gguf=target/'candidate.gguf'
     shutil.copyfile(model,gguf)
     with gguf.open('r+b') as f:
@@ -119,7 +128,10 @@ def save_export(args,stage,model,definition,tensors,packed,delta,report):
     (target/'Modelfile').write_text(text)
     torch.save({n:(a.detach().cpu(),b.detach().cpu(),s) for n,(a,b,s) in delta.items()},target/'adapter.pt')
     (target/'selected.json').write_text(json.dumps(report,indent=2)+'\n')
-    print('Exported',target,gguf.stat().st_size,'sha256',digest(gguf),flush=True)
+    link=args.out/f'.{checkpoint}.link'
+    link.symlink_to(checkpoint,target_is_directory=True)
+    os.replace(link,args.out/f'stage{stage}')
+    print('Exported',args.out/f'stage{stage}','->',checkpoint,gguf.stat().st_size,'sha256',digest(gguf),flush=True)
 
 def train(args):
     args.out.mkdir()
@@ -151,7 +163,7 @@ def train(args):
     history=[{'stage':0,'step':0,**baseline}]
     delta={};start_time=time.monotonic();step=0
     for stage,blocks,epochs,lr in [(1,range(22,28),args.epochs,args.lr),
-                                  (2,sorted(set(range(22,28))|set(range(12,27,2))),args.epochs,args.lr/2)]:
+                                  (2,sorted(set(range(22,28))|set(range(12,27,2))),args.epochs,args.lr/2)][:args.stages]:
         for i in blocks:
             for part in PARTS:
                 name=f'blk.{i}.{part}.weight'
@@ -219,8 +231,9 @@ def train(args):
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__,formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('--data',type=Path,required=True);p.add_argument('--out',type=Path,required=True,help='New run directory (refused if it exists)')
-    p.add_argument('--llama-server',default=shutil.which('llama-server') or (str(BUNDLED_SERVER) if BUNDLED_SERVER.is_file() else 'llama-server'),
+    p.add_argument('--llama-server',default=DEFAULT_SERVER,
                    help='llama.cpp server used for tokenization and the forward-parity check')
+    p.add_argument('--stages',type=int,choices=(1,2),default=2,help='2 runs both stages; 1 stops after stage 1')
     p.add_argument('--epochs',type=int,default=3);p.add_argument('--batch',type=int,default=16);p.add_argument('--rank',type=int,default=12)
     p.add_argument('--scale',type=float,default=2);p.add_argument('--lr',type=float,default=2e-4);p.add_argument('--format-weight',type=float,default=.5)
     p.add_argument('--rank-weight',type=float,default=.2);p.add_argument('--seed',type=int,default=20261111)
