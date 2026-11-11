@@ -1,4 +1,4 @@
-"""Measure how close each test conversation is to its nearest conversation in the 7,500 training rows."""
+"""Measure how close each test conversation is to its nearest conversation in the training and validation rows."""
 import argparse
 import csv
 from pathlib import Path
@@ -33,7 +33,7 @@ def band(similarity):
 def measure(data, split_file, output):
     cases = load_cases(data, split_file)
     test = [r for s, r in cases if s == "test"]
-    seen = [r for s, r in cases if s != "test"]
+    seen = [r for s, r in cases if s in ("train", "validation")]  # a template split also has excluded rows
     sets = [shingles(r) for r in test + seen]
     index = {}
     rows, cols = [], []
