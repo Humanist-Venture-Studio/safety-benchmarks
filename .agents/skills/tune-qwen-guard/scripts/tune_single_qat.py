@@ -7,8 +7,9 @@ reproduces that grid exactly. Defaults: rank 12, scale 2, two epochs per stage,
 learning rate 6e-4, seed 20261112.
 
 BASE is an installed Ollama tag fitted on train rows only, such as this
-experiment's refit_head.py candidate; never a historical tag. Output, stages
-and checkpoint layout are as in tune_single_lowrank.py. OUT must not exist yet.
+experiment's refit_head.py candidate; never a historical tag. Output, stages,
+--stop-after-step and checkpoint layout are as in tune_single_lowrank.py. OUT
+must not exist yet.
 """
 import argparse
 from pathlib import Path
@@ -75,6 +76,7 @@ if __name__=='__main__':
     p.add_argument('--llama-server',default=fit.DEFAULT_SERVER,
                    help='llama.cpp server used for tokenization and the forward-parity check')
     p.add_argument('--stages',type=int,choices=(1,2),default=2,help='2 runs both stages; 1 stops after stage 1')
+    p.add_argument('--stop-after-step',type=int,help='End after the first validation at or after this step (schedule unchanged)')
     p.add_argument('--epochs',type=int,default=2);p.add_argument('--batch',type=int,default=16);p.add_argument('--rank',type=int,default=12)
     p.add_argument('--scale',type=float,default=2);p.add_argument('--lr',type=float,default=6e-4);p.add_argument('--format-weight',type=float,default=.5)
     p.add_argument('--rank-weight',type=float,default=.2);p.add_argument('--seed',type=int,default=20261112)

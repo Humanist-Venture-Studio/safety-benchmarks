@@ -1,11 +1,14 @@
-"""Run the skill's unchanged verdict-layer fit on an installed low-rank candidate.
+"""Run the skill's verdict-layer fit (tune.py) on an installed low-rank candidate.
 
 BASE is an installed Ollama tag, such as the tune_single_lowrank.py stage that
 scored best on CLI validation. Train and validation encodings are kept beside
 OUT as OUT.features.npz; no test rows are encoded. The exported Modelfile sets
-temperature 0. Neither OUT nor its features file may exist yet.
+temperature 0. --penalties replaces tune.fit's L2 penalties (0.4 0.04 0.004);
+the fit still keeps the one that scores best on validation. Neither OUT nor its
+features file may exist yet.
 """
 import argparse
+import functools
 from pathlib import Path
 import re
 import shutil
@@ -17,7 +20,9 @@ p.add_argument('--data',type=Path,required=True);p.add_argument('--base',require
 p.add_argument('--out',type=Path,required=True,help='New candidate directory (refused if it exists)')
 p.add_argument('--llama-server',default=shutil.which('llama-server') or (str(bundled) if bundled.is_file() else 'llama-server'),
                help='Path to the llama.cpp server executable')
+p.add_argument('--penalties',type=float,nargs='+',help="L2 penalties to compare on validation (default: tune.fit's 0.4 0.04 0.004)")
 a=p.parse_args();tune.BASE=a.base
+if a.penalties:tune.fit=functools.partial(tune.fit,penalties=tuple(a.penalties))
 features=a.out.parent/(a.out.name+'.features.npz')
 for path in (a.out,features):
     if path.exists():raise FileExistsError(f'Choose a new output: {path}')

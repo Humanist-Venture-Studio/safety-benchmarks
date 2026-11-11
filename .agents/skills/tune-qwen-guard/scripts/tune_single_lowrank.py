@@ -9,8 +9,10 @@ directory OUT/stageN-stepS; OUT/stageN is a symlink to the best complete one,
 switched only after all of its files are written. A run interrupted mid-export
 leaves that incomplete stageN-stepS directory behind, and OUT/stageN still names
 the previous complete checkpoint (or does not exist yet). --stages 1 stops
-after stage 1. Finalists must separately pass benchmark.py via the Ollama CLI
-(evaluate_cli.py). OUT must not exist yet.
+after stage 1. --stop-after-step S ends the run after the first validation at
+or after step S and still writes run.json; the learning-rate schedule stays the
+full one set by --epochs. Finalists must separately pass benchmark.py via the
+Ollama CLI (evaluate_cli.py). OUT must not exist yet.
 """
 import argparse
 import hashlib
@@ -161,7 +163,7 @@ def train(args):
     baseline=logits(w,None,val,ids,device)
     print('Baseline validation',baseline,flush=True)
     history=[{'stage':0,'step':0,**baseline}]
-    delta={};start_time=time.monotonic();step=0
+    delta={};start_time=time.monotonic();step=0;stop=False
     for stage,blocks,epochs,lr in [(1,range(22,28),args.epochs,args.lr),
                                   (2,sorted(set(range(22,28))|set(range(12,27,2))),args.epochs,args.lr/2)][:args.stages]:
         for i in blocks:
@@ -221,7 +223,12 @@ def train(args):
                         best=key;best_state={n:(a.detach().clone(),b.detach().clone(),s) for n,(a,b,s) in delta.items()}
                         save_export(args,stage,model,definition,tensors,packed,delta,report)
                     del packed
+                    # Early stop only; the OneCycle schedule above keeps its full length.
+                    stop=args.stop_after_step is not None and step>=args.stop_after_step
+                    if stop:break
+            if stop:print('Stopped after step',step,flush=True);break
             print('Completed stage',stage,'epoch',epoch+1,flush=True)
+        if stop:break
         with torch.no_grad():
             for name,(a,b,s) in delta.items():a.copy_(best_state[name][0]);b.copy_(best_state[name][1])
     manifest={'args':{k:str(v) if isinstance(v,Path) else v for k,v in vars(args).items()},'source_sha256':digest(model),
@@ -234,6 +241,7 @@ if __name__=='__main__':
     p.add_argument('--llama-server',default=DEFAULT_SERVER,
                    help='llama.cpp server used for tokenization and the forward-parity check')
     p.add_argument('--stages',type=int,choices=(1,2),default=2,help='2 runs both stages; 1 stops after stage 1')
+    p.add_argument('--stop-after-step',type=int,help='End after the first validation at or after this step (schedule unchanged)')
     p.add_argument('--epochs',type=int,default=3);p.add_argument('--batch',type=int,default=16);p.add_argument('--rank',type=int,default=12)
     p.add_argument('--scale',type=float,default=2);p.add_argument('--lr',type=float,default=2e-4);p.add_argument('--format-weight',type=float,default=.5)
     p.add_argument('--rank-weight',type=float,default=.2);p.add_argument('--seed',type=int,default=20261111)
