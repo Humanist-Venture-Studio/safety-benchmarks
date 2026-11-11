@@ -91,6 +91,43 @@ Each results TSV contains the input rows, split, first-attempt classification an
 
 In the earlier Humanist experiment, tuning 45 tensors raised held-out accuracy from **504/624 (80.77%)** to **608/624 (97.44%)**. That experiment also tuned transformer layers. Use the TSVs from your run for the verdict-layer recipe above.
 
+### Single-turn low-rank candidate (prototype)
+
+Results for this recipe are pending; this section documents the source and makes no accuracy claim. It uses the session variables, prompt, template and split above, fits only on `train` and selects only on `validation`.
+
+[`tune_single_lowrank.py`](.agents/skills/tune-qwen-guard/scripts/tune_single_lowrank.py) adds rank-12 updates with scale 2 to `attn_q`, `attn_v`, `attn_output` and `ffn_down` of the original Sileader GGUF and trains on the 1,411 paired training requests (2,822 rows). Stage 1 trains blocks 22–27 for three epochs. Stage 2 keeps that update, adds blocks 12, 14, 16, 18 and 20, and trains three more epochs at half the learning rate with an extra loss that ranks each request's safe reply above its unsafe one. Both stages distil the other reply tokens from the source model so the `Safety:` and `Categories:` lines keep their format. Before training it checks the prompt tokens against Ollama and its forward pass against `llama-server`. Twice per epoch, [`quantize.py`](.agents/skills/tune-qwen-guard/scripts/quantize.py) merges the update into each tensor's original Q4_K or Q6_K type and the checkpoint is scored on validation logits. The best checkpoint of each stage goes to `stage1/` and `stage2/`: a full-size GGUF, the adapter and a temperature-0 Modelfile. The forward pass in [`qwen_torch.py`](.agents/skills/tune-qwen-guard/scripts/qwen_torch.py) is adapted from Product Fox's in #8 and supports only Qwen3 0.6B.
+
+The trainer needs PyTorch on top of the packages above. The reference run used Python 3.12 with `gguf` 0.19.0, `numpy` 2.5.4, `scipy` 1.18.1 and `torch` 2.15.0. It trains on Apple-silicon MPS when available and on the CPU otherwise. The seed is fixed, but GPU kernels may not reproduce a run bit for bit.
+
+```bash
+"$py" -m pip install torch
+"$py" -B "$skill/scripts/tune_single_lowrank.py" --data data.tsv --out "$run/lowrank"
+ollama create "$candidate-lr1" -f "$run/lowrank/stage1/Modelfile"
+ollama create "$candidate-lr2" -f "$run/lowrank/stage2/Modelfile"
+```
+
+[`evaluate_cli.py`](.agents/skills/tune-qwen-guard/scripts/evaluate_cli.py) runs `benchmark.py`'s unchanged evaluator and keeps each first reply in a `.responses.jsonl` file beside the TSV. It accepts only tags whose Modelfile sets `PARAMETER temperature 0`, so compare with a temperature-0 copy of Sileader. [`describe_results.py`](.agents/skills/tune-qwen-guard/scripts/describe_results.py) recounts the TSVs and checks each reply's verdict and category lines.
+
+```bash
+ollama show "$base" --modelfile > "$run/sileader.Modelfile"
+printf '\nPARAMETER temperature 0\n' >> "$run/sileader.Modelfile"
+ollama create "$candidate-base" -f "$run/sileader.Modelfile"
+for model in "$candidate-base" "$candidate-lr1" "$candidate-lr2"; do
+  "$py" -B "$skill/scripts/evaluate_cli.py" --data data.tsv --model "$model" \
+    --split validation --output "$run/${model##*:}-validation.tsv" || break
+done
+"$py" -B "$skill/scripts/describe_results.py" "$run"/*-validation.tsv
+```
+
+To calibrate the verdict rows of the stage that wins on validation, [`refit_head.py`](.agents/skills/tune-qwen-guard/scripts/refit_head.py) runs `tune.py`'s unchanged fit on that tag and writes a temperature-0 Modelfile.
+
+```bash
+"$py" -B "$skill/scripts/refit_head.py" --data data.tsv --base "$candidate-lr2" --out "$run/calibrated"
+ollama create "$candidate-cal" -f "$run/calibrated/Modelfile"
+```
+
+Before scoring `test`, freeze the finalists in a JSON manifest, `{"dataset_sha256": "…", "models": {"<tag>": {"gguf_sha256": "…"}}}`, with the SHA-256 of `data.tsv` and of the `FROM` file in `ollama show <tag> --modelfile`. Then pass `--split test --freeze <manifest>` to `evaluate_cli.py`. Every script refuses an output path that already exists.
+
 ## Repository Contents
 
 - `data.tsv` — Benchmark dataset containing prompts (`request`), paired safe and unsafe replies (`simulated_response`), categories, languages, and binary safety labels (`is_safe`).
