@@ -22,3 +22,11 @@ For a larger weights-only experiment, reuse the same split, prompt-token check a
 3. Calibrate verdict and formatting tokens on the exported model. Use the baseline’s Unsafe/Controversial judgments as a secondary signal on correctly flagged training examples. After choosing the settings, the earlier run refit the output words on training plus validation and evaluated the installed tag on all rows. Only the 624 test rows remained independent of the final fit.
 
 The included trainer implements the smaller verdict-layer experiment. Run the CLI comparison to obtain a score for the weights it produces.
+
+## Mixed-data v3 experiment
+
+For one model handling both files, follow the [v3 report](../../../reports/qwen3guard-v3-racoon.md) and the `*_v3.py` scripts. Keep the explicit `reply` versus `conversation` assessment scope from `v3_protocol.py`; these datasets do not have an interchangeable rubric. Both scopes use the same Student/Assistant serialization. Only the native one-turn/reply and four-turn/conversation combinations have labeled evaluation here.
+
+Preserve the historical single-turn grouping and exact `data-multi-template-split.tsv` manifest. The v3 scripts check the frozen input hashes, exclude overlapping training items, and reserve test generation until a model/contract/evaluator freeze. Use separate task metrics and the declared validation floors, including missed risks and false alarms. Keep training, checkpoint selection, actual exported CLI validation and the one-time test evaluation distinct. Retain failed experiments and describe an unsuccessful final candidate as experimental.
+
+The native GGUF Jinja template and Modelfile template must render the same tokens. Use `v3_export.py` on fresh copies and verify parity in `evaluate_v3.py`; the installed runtime did not honor a changed Modelfile template by itself. Preserve existing tags and keep GGUF/checkpoint binaries outside Git.
