@@ -1,4 +1,4 @@
-"""Replay a Spark experiment pass using the task's local model sources and services."""
+"""Replay a Spark or Flash experiment pass using the task's local model sources and services."""
 
 import argparse
 import csv
@@ -16,15 +16,18 @@ from pathlib import Path
 from calibrate import apply
 from common import WORK, atomic_text, read_tsv, require
 from results import validate_run
+import tier_data
 
 SCRIPTS = Path(__file__).resolve().parent
 MODELS = WORK / "models"
-RUNS = MODELS / "spark-real"
-LOGS = WORK / "logs/spark"
-RESULTS = WORK / "results/spark"
-revision = os.environ.get("KLARA_SPARK_RUN", "")
+TIER = os.environ.get("KLARA_EXPERIMENT_TIER", "spark")
+require(TIER in ("spark", "flash"), "unknown experiment tier")
+RUNS = MODELS / (TIER + "-real")
+LOGS = WORK / "logs" / TIER
+RESULTS = WORK / "results" / TIER
+revision = os.environ.get(f"KLARA_{TIER.upper()}_RUN", "")
 require(not revision or re.fullmatch(r"[a-z0-9-]+", revision), "invalid Spark run name")
-CHAT_NAME = "smollm-real"
+CHAT_NAME = "smollm-final"
 if revision:
     RUNS, LOGS, RESULTS = RUNS / revision, LOGS / revision, RESULTS / revision
     CHAT_NAME += "-" + revision
@@ -36,12 +39,28 @@ OLLAMA = "http://127.0.0.1:18282"
 LICENSE = {"mezzo": "Apache-2.0", "ettin": "MIT", "smollm": "Apache-2.0"}
 
 
+FLASH_QUANT = {"granite": "Q5_K_M", "q35-2": "Q6_K", "qguard06": "F16"}
+if TIER == "flash":
+    LICENSE = dict.fromkeys(FLASH_QUANT, "Apache-2.0")
+
+
+def source(model):
+    if model in ("q35-2", "qguard06"):
+        return MODELS / "tier-proof" / model / "source"
+    return MODELS / "source" / model
+
+
+def is_chat_model(model):
+    return model == "smollm" or model in FLASH_QUANT
+
+
 def record(event):
     with (LOGS / "commands.jsonl").open("a") as f:
         print(json.dumps(event), file=f)
 
 
 def run(name, *args):
+    provenance = tier_data.verify(LOGS)
     cmd = list(map(str, args))
     start = time.time()
     tick = time.monotonic()
@@ -49,7 +68,7 @@ def run(name, *args):
         code = subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT).returncode
     record(
         dict(
-            step=name, argv=cmd, start=start, seconds=time.monotonic() - tick, code=code
+            step=name, argv=cmd, start=start, seconds=time.monotonic() - tick, code=code, **provenance
         )
     )
     require(code == 0, f"{name} exited {code}; see its log")
@@ -157,14 +176,18 @@ def calibrate_pass(name):
 def pass_run(model, stage):
     name = model + "-" + stage
     folder = RUNS / name
-    src = MODELS / "source" / model
-    is_chat = model == "smollm"
+    src = source(model)
+    is_chat = is_chat_model(model)
     baseline = stage == "baseline"
     options = []
     if is_chat:
-        tag = f"klara/cand-spark-{CHAT_NAME}-{stage}"
+        chat_name = CHAT_NAME if model == "smollm" else "-".join(filter(None, (model, "final", revision)))
+        tag = f"klara/cand-{TIER}-{chat_name}-{stage}"
+        native = {"granite": "granite", "qguard06": "qwen-guard"}.get(model) if baseline else None
         with_service = service(name, OLLAMA, "/api/tags", "ollama", "serve")
         options = ["--backend", "ollama", "--endpoint", OLLAMA, "--model", tag]
+        if native:
+            options.extend(["--native", native, "--native-tokenizer", src])
         if not baseline:
             options.extend(["--safe-token", " safe", "--unsafe-token", " unsafe"])
     else:
@@ -199,15 +222,27 @@ def pass_run(model, stage):
                     "--run",
                     folder,
                     "--tier",
-                    "spark",
+                    TIER,
                     "--name",
-                    CHAT_NAME,
+                    chat_name,
                     "--round",
                     stage,
                     "--quant",
-                    "Q8_0",
+                    FLASH_QUANT.get(model, "Q8_0"),
+                    *(["--native-baseline", native] if native else []),
                     *(["--baseline-source", src] if baseline else []),
                 )
+            if TIER == "flash":
+                # The private Ollama store and the kept export are the same GGUF.
+                # Link the verified blob so keeping nine candidates costs one copy apiece.
+                digest = tier_data.digest(artifact)
+                blob = MODELS / "ollama/blobs" / ("sha256-" + digest)
+                require(blob.is_file() and tier_data.digest(blob) == digest,
+                        "private Ollama blob differs from exported artifact")
+                if not os.path.samefile(artifact, blob):
+                    link = artifact.with_suffix(".verified-link")
+                    os.link(blob, link)
+                    link.replace(artifact)
             if not baseline:
                 run(
                     name + "-verify",
@@ -234,7 +269,9 @@ def pass_run(model, stage):
                 TEI,
             )
         nbytes = artifact.stat().st_size
-        require(nbytes <= 250_000_000, "Spark size cap exceeded")
+        from export_chat import BOUNDS
+        low, high = BOUNDS[TIER]
+        require(low <= nbytes <= high, f"{TIER} deployment size out of bounds")
         for split in ("train-sample", "validation"):
             out = RESULTS / f"{name}-{split}-raw.tsv"
             if not out.exists():
@@ -243,7 +280,7 @@ def pass_run(model, stage):
                     PYTHON,
                     SCRIPTS / "benchmark.py",
                     "--tier",
-                    "spark",
+                    TIER,
                     "--stage",
                     name,
                     "--split",
@@ -274,15 +311,16 @@ def train(
     weak_rules,
     lookalikes,
     positive_weight,
+    smoothing,
 ):
-    src = MODELS / "source" / model
+    src = source(model)
     name = model + "-" + stage if fold is None else model + f"-fold{fold}"
-    is_chat = model == "smollm"
+    is_chat = is_chat_model(model)
     cmd = [
         PYTHON,
         SCRIPTS / ("train_chat.py" if is_chat else "train_encoder.py"),
         "--tier",
-        "spark",
+        TIER,
         "--source",
         src,
         "--data",
@@ -300,24 +338,25 @@ def train(
         "--positive-weight",
         positive_weight,
         "--batch",
-        4 if is_chat else 8,
+        2 if TIER == "flash" else (4 if is_chat else 8),
         "--max-planning-rate",
-        {"mezzo": 7459, "ettin": 7437, "smollm": 3156}[model],
+        {"mezzo": 7459, "ettin": 7437, "smollm": 3156, "granite": 526, "q35-2": 649, "qguard06": 1338}[model],
     ]
     if is_chat:
-        cmd.extend(["--rank", rank, "--verdict-smoothing", 0.05])
+        cmd.extend(["--rank", rank, "--verdict-smoothing", smoothing])
     else:
         cmd.extend(["--precision", "fp16"])
     if stage == "baseline":
         require(model == "ettin", "only Ettin fits a baseline head")
         cmd.append("--probe")
+    eval_batch = 8 if TIER == "flash" else 16
     if fold is not None:
-        cmd.extend(["--fold", fold, "--eval-batch", 16])
+        cmd.extend(["--fold", fold, "--eval-batch", eval_batch])
     elif stage == "r2":
         cmd.extend(
             [
                 "--eval-batch",
-                16,
+                eval_batch,
                 "--oof",
                 *[RUNS / f"{model}-fold{i}" / "oof.json" for i in range(folds)],
                 "--extra-copies",
@@ -329,9 +368,14 @@ def train(
         if lookalikes:
             cmd.append("--repeat-lookalikes")
         if is_chat:
-            cmd.extend(
-                ["--init-adapter", RUNS / f"{model}-r1" / "adapter", "--q8-aware"]
-            )
+            previous = RUNS / f"{model}-r1"
+            cmd.extend(["--init-adapter", previous / "adapter"])
+            if model == "smollm":
+                cmd.append("--q8-aware")
+            elif model == "qguard06":
+                cmd.append("--fp16")
+            else:
+                cmd.extend(["--r1-gguf", previous / "candidate.gguf"])
         else:
             cmd.extend(["--init-checkpoint", RUNS / f"{model}-r1" / "hf"])
     run(name + "-fit", *cmd)
@@ -352,6 +396,7 @@ def main():
     p.add_argument("--weak-rules", type=int, default=0)
     p.add_argument("--lookalikes", action="store_true")
     p.add_argument("--positive-weight", type=float, default=3)
+    p.add_argument("--verdict-smoothing", type=float, default=0.05 if TIER == "spark" else 0.0)
     a = p.parse_args()
     os.environ.update(
         HF_HUB_OFFLINE="1",
@@ -362,9 +407,13 @@ def main():
         OLLAMA_MODELS=str(MODELS / "ollama"),
         OLLAMA_NO_CLOUD="1",
     )
+    provenance = tier_data.verify(LOGS)
     require(DATA.is_file(), "prepare train and validation projection first")
     RESULTS.mkdir(parents=True, exist_ok=True)
-    digest = hashlib.sha256(DATA.read_bytes()).hexdigest()
+    with atomic_text(RESULTS / "dataset.json") as f:
+        json.dump(provenance, f)
+        f.write("\n")
+    digest = provenance["development_sha256"]
     signature = LOGS / "development.sha256"
     if not signature.exists():
         with atomic_text(signature, replace=False) as f:
@@ -375,6 +424,22 @@ def main():
     )
     start = time.time()
     tick = time.monotonic()
+    if a.action == "train" and a.stage == "r2" and TIER == "spark":
+        # Fold costs depend on the hardware. Keep the same maximum fit allocation,
+        # leaving the measured cost of exporting and scoring in the twenty minutes.
+        events = [json.loads(line) for line in (LOGS / "commands.jsonl").read_text().splitlines()]
+        fold_seconds = sum(e["seconds"] for e in events if e.get("action") == "train"
+                           and e["model"] == a.model and e["fold"] is not None)
+        serve_seconds = next(e["seconds"] for e in events if e.get("action") == "score"
+                             and e["model"] == a.model and e["stage"] == "r1")
+        a.seconds = min(a.seconds, int(1200 - fold_seconds - serve_seconds - 10))
+        require(a.seconds > 0, "no Spark round-two fit time remaining")
+        if a.model == "smollm":
+            from spark_report import fold_errors
+            meta = {r["row_id"]: r for r in read_tsv(DATA)}
+            rules = [r for r in fold_errors(a.model, meta) if r["dimension"] == "rule_id" and r["total"]]
+            if len({r["errors"] / r["total"] for r in rules}) > 1:
+                a.weak_rules = 3
     if a.action == "train":
         train(
             a.model,
@@ -382,13 +447,14 @@ def main():
             a.seconds,
             a.folds,
             a.fold,
-            a.lr or (2e-4 if a.model == "smollm" else 3e-5),
+            a.lr or (2e-4 if is_chat_model(a.model) else 3e-5),
             a.epochs,
             a.copies,
             a.rank,
             a.weak_rules,
             a.lookalikes,
             a.positive_weight,
+            a.verdict_smoothing,
         )
     else:
         pass_run(a.model, a.stage)

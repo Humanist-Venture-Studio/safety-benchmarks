@@ -51,6 +51,8 @@ def main():
         "--chat", action="store_true", help="render the tuned Klara GGUF verdict prompt"
     )
     a = p.parse_args()
+    from tier_data import verify_input
+    verify_input(a.data)
     started = time.monotonic()
     scored = sorted(read_tsv(a.scores), key=lambda r: r["row_id"])
     validate_run(scored)

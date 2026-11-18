@@ -10,7 +10,7 @@ from pathlib import Path
 from common import read_tsv, require
 from metrics import metrics
 from results import validate_run
-from spark_experiment import DATA, LOGS, RESULTS, RUNS, LICENSE
+from spark_experiment import DATA, LOGS, RESULTS, RUNS, LICENSE, TIER, source, is_chat_model
 
 COMPACT = "row_id split is_unsafe unsafe_probability label error latency_ms".split()
 STAGES = ("baseline", "r1", "r2")
@@ -82,7 +82,7 @@ def fold_errors(model, meta):
 
 def save_recipes(out, meta, commands):
     """Keep source revisions, selected groups and exact row memberships alongside the local evidence."""
-    from spark_experiment import MODELS, WORK
+    from spark_experiment import WORK
 
     recipes = {}
     archived = RESULTS / "fit-membership"
@@ -128,10 +128,11 @@ def save_recipes(out, meta, commands):
             fit_and_oof_seconds=info.get("fit_and_oof_seconds", info["wall_seconds"]),
         )
     sources = {
-        m: json.loads((MODELS / "source" / m / "source.json").read_bytes())
+        m: json.loads(((source(m) if (source(m) / "source.json").exists() else source(m).parent) / "source.json").read_bytes())
         for m in LICENSE
     }
     report = dict(
+        source_sha256=json.loads((LOGS / "dataset.json").read_bytes())["source_sha256"],
         development_sha256=hashlib.sha256(DATA.read_bytes()).hexdigest(),
         seed=20261117,
         sources=sources,
@@ -215,12 +216,14 @@ def main():
                     / name
                     / (
                         "candidate.gguf"
-                        if model == "smollm"
+                        if is_chat_model(model)
                         else "hf/model.safetensors"
                     )
                 )
+                from export_chat import BOUNDS
+                lo, hi = BOUNDS[TIER]
                 require(
-                    artifact.stat().st_size == int(raw[0]["size_bytes"]) <= 250_000_000,
+                    lo <= artifact.stat().st_size == int(raw[0]["size_bytes"]) <= hi,
                     "retained artifact size diverged from benchmark",
                 )
                 if name not in artifact_hashes:

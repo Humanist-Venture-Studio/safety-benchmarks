@@ -53,6 +53,8 @@ def hf_reference(run, recipe, samples):
             model = PeftModel.from_pretrained(
                 model, recipe["init_adapter"]
             ).merge_and_unload()
+        if recipe.get("fp16"):
+            model.half()
         model = PeftModel.from_pretrained(model, run / "adapter").merge_and_unload()
     model.to("mps").eval()
     refs = {}

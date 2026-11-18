@@ -219,6 +219,7 @@ def backend_args(p):
     p.add_argument("--safe-label", default="safe", help="TEI id2label value")
     p.add_argument("--unsafe-label", default="unsafe", help="TEI id2label value")
     p.add_argument("--native", choices=("mezzo", "granite", "qwen-guard"), help="unmodified HF guard scoring recipe")
+    p.add_argument("--native-tokenizer", type=Path, help="local upstream tokenizer for an Ollama guard baseline")
     p.add_argument("--calibration", type=Path, help="fitted calibrate.py JSON")
     p.add_argument("--threshold", type=float, help="default: fitted cutoff or 0.5")
     p.add_argument("--timeout", type=float, default=120, help="deadline per request in seconds")
@@ -238,6 +239,7 @@ class Backend:
         require(self.labels[0] != self.labels[1], "TEI verdict labels must differ")
         self.prompt = CHAT_PROMPT
         self.key = None
+        self.ollama_native = None
         require(not args.prompt_file or self.name == "openrouter", "--prompt-file is for cloud runs")
         if self.name == "openrouter":
             require(self.model == CLOUD_MODEL and args.endpoint is None, "use the fixed Klara cloud model and endpoint")
@@ -258,6 +260,12 @@ class Backend:
         else:
             default_url = "http://127.0.0.1:8080" if self.name == "tei" else "http://127.0.0.1:11434"
             self.base = (args.endpoint or default_url).rstrip("/")
+            if self.name == "ollama" and getattr(args, "native", None):
+                from ollama_native import OllamaNative
+                require(args.native in ("qwen-guard", "granite") and args.native_tokenizer,
+                        "native Ollama needs a guard and its local tokenizer")
+                self.ollama_native = OllamaNative(args.native, args.native_tokenizer)
+                self.prompt = self.ollama_native.recipe
             if self.name == "tei":
                 info = request_json(self.base + "/info", self.timeout)
                 require(info.get("model_id") == self.model, "TEI /info model_id differs from --model")
@@ -301,6 +309,8 @@ class Backend:
                 reply = request_json(self.base + "/predict", self.timeout,
                                      {"inputs": text, "raw_scores": True, "truncate": False})
                 p, raw = mezzo_score(reply) if self.tei_native else tei_score(reply, self.labels)
+            elif self.ollama_native:
+                p, raw = self.ollama_native.score(messages, self.base, self.model, self.timeout)
             elif self.name == "ollama":
                 reply = request_json(self.base + "/api/chat", self.timeout, {
                     "model": self.model, "messages": [{"role": "system", "content": self.prompt},

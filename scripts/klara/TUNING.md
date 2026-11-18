@@ -90,3 +90,25 @@ Pass `--calibration "$run/calibration.json"` to both `score.py` and `benchmark.p
 Run the dependency-free checks with `python3 -m unittest discover -s scripts/klara -p test_tuning.py`. The live parity commands above require the corresponding exported weights and services. Use synthetic fixtures when preparing a deployment before the dataset is released.
 
 The [Spark experiment](../../results/klara/spark/README.md) records the train-sample and validation results, frozen source revisions, replay arguments and browser parity measurements. For native Mezzo on TEI, `--backend tei --native mezzo` applies the producer's maximum sigmoid to the five FP16 logits. The two-label fine-tunes use the default binary softmax.
+
+### Reproduce the final Spark and Flash runs
+
+The real-data experiment pins both the full source bytes and a train/validation projection. The source SHA-256 is `0ff32b946a2e83760e90ce0974c73cedff23a6b8cbd9bd766cef155744caf294`. The projector hashes the complete stream and selects on the split prefix before decoding conversation text. Each fit, fold and split benchmark checks the full source and the projection. Each tier writes both digests to its local results directory.
+
+Use a new lowercase run name to retain earlier artifacts. The following commands assume the Mac environment and sources prepared above.
+
+```sh
+w="$HOME/klara-tiers"
+p="$w/env/venv/bin/python"
+k=scripts/klara
+export KLARA_SPARK_RUN=replay-02
+"$p" "$k/tier_data.py" prepare "$w/logs/spark/$KLARA_SPARK_RUN"
+```
+
+For Spark, replay the ordered `spark_experiment_arguments` from the final tier's `fit-recipes.json`, passing each list to `spark_experiment.py`. Run heavy commands serially through the host gate when it exists. Finish with `tier_rounds.py finish-spark` to recount the two splits and compare all three Node exports. The original table appears in the task's `results/spark/tables.md` while Flash runs. Later named replays write the local table to the run's own subdirectory.
+
+For Flash, `KLARA_FLASH_RUN=replay-02 "$p" "$k/tier_rounds.py" run-flash` prepares a fresh projection, runs all three candidates, verifies tuned GGUFs and writes both operating points. The report commands write compact results to the checkout's `results/klara/<tier>` directory. Use a checkout intended for the new results. Neither tier evaluates test.
+
+The native Flash guards use their own tokenizer templates with Ollama raw generation. Granite uses its standard harm definition and Yes/No. Qwen3Guard uses the probability mass of Unsafe and Controversial at its native verdict position. Each guard evaluates each consecutive speaker prefix once and takes the maximum risk over the conversation. A missing verdict alternative or incomplete word makes the entire row malformed. Tuned models use the fixed Klara prompt.
+
+Round two starts from round one, with train-only out-of-fold error weights. The K-quant models use the prior deployed GGUF for the frozen text projections and embedding. The last four full-attention V projections learn residual LoRAs under their deployed per-sub-block code ranges, scales and offsets. The final GGUF export recomputes block scales on the merged weights. This is fixed-grid quantization-aware training with floating-point accumulation. The F16 guard uses FP16 base weights and float optimizer state. The five-length service check compares the actual deployed export with the merged model.

@@ -53,7 +53,17 @@ def register(a, out, tag, check_tag, embedded, tok):
     )
     try:
         saved = request_json(a.endpoint + "/api/show", 30, {"model": stage})
-        if a.baseline_source:
+        if a.native_baseline:
+            from ollama_native import OllamaNative
+            guard = OllamaNative(a.native_baseline, a.baseline_source)
+            prefix = guard.prefix([{"role": "user", "content": "What is a circle?"}])
+            expected = tok.encode(prefix)
+            response = request_json(a.endpoint + "/api/generate", 120, {
+                "model": stage, "prompt": prefix, "raw": True, "stream": False,
+                "options": {"temperature": 0, "num_predict": 1}})
+            require(response["prompt_eval_count"] == len(expected),
+                    "native guard template length mismatch")
+        elif a.baseline_source:
             # Ollama also recognizes native ChatML as an equivalent built-in Go template.
             messages = [
                 {"role": "system", "content": CHAT_PROMPT},
@@ -124,6 +134,7 @@ def main():
         type=Path,
         default=WORK / "env/tools/llama.cpp/convert_hf_to_gguf.py",
     )
+    p.add_argument("--native-baseline", choices=["granite", "qwen-guard"])
     p.add_argument("--endpoint", default="http://127.0.0.1:18282")
     stages = p.add_mutually_exclusive_group()
     stages.add_argument(
@@ -209,6 +220,8 @@ def main():
                     base = PeftModel.from_pretrained(
                         base, recipe["init_adapter"]
                     ).merge_and_unload()
+                if recipe.get("fp16"):
+                    base.half()
                 merged = PeftModel.from_pretrained(
                     base, a.run / "adapter"
                 ).merge_and_unload(safe_merge=True)

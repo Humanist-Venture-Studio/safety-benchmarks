@@ -109,6 +109,8 @@ def main():
         type=Path,
         help="warm-start round two from the first-round adapter",
     )
+    p.add_argument("--r1-gguf", type=Path, help="fit residual V adapters on the deployed K-quant grids")
+    p.add_argument("--fp16", action="store_true", help="fit on the warm-started FP16 weights")
     p.add_argument("--checkpointing", action="store_true")
     a = p.parse_args()
     require(0 <= a.verdict_smoothing < 0.5, "verdict smoothing must be in [0, 0.5)")
@@ -121,6 +123,8 @@ def main():
     base = load_base(a.source)
     if a.init_adapter:
         base = PeftModel.from_pretrained(base, a.init_adapter).merge_and_unload()
+    if a.fp16:
+        base.to(dtype=torch.float16)
     suffixes = {
         "q_proj",
         "k_proj",
@@ -144,6 +148,9 @@ def main():
         and "visual" not in name
         and "vision" not in name
     ]
+    if a.r1_gguf:
+        require(a.init_adapter and not a.fp16, "K-quant fitting needs a round-one adapter")
+        targets = [name for name in targets if name.endswith(".v_proj")][-4:]
     require(targets and a.rank > 0, "no language projections or invalid rank")
     model = get_peft_model(
         base,
@@ -161,6 +168,9 @@ def main():
         )
         model.enable_input_require_grads()
     model.to(a.device)
+    if a.r1_gguf:
+        from flash_precision import configure
+        configure(model, a.r1_gguf)
     if a.q8_aware:
         enable_smol_q8(model)
     verdict_ids = torch.tensor(ids, device=a.device)
@@ -184,6 +194,8 @@ def main():
                 else None,
                 "tier": a.tier,
                 "q8_aware": a.q8_aware,
+                "fp16": a.fp16,
+                "k_quant_residual": bool(a.r1_gguf),
             },
             indent=2,
         )

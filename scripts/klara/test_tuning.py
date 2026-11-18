@@ -17,6 +17,60 @@ from verify_chat import compare_verdict, reference_key
 
 
 class GuardTuningChecks(unittest.TestCase):
+    def test_dataset_pin_checks_source_and_projected_bytes(self):
+        from tier_data import digest, prepare, verify
+
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            source = root / "full.tsv"
+            source.write_bytes(b"row_id\tsplit\tx\nK1\ttrain\tA\nK2\ttest\t\xff\nK3\tvalidation\tB\n")
+            expected = digest(source)
+            out = root / "log"
+            prepare(out, source, expected)
+            verify(out, source, expected)
+            dev = out / "development.tsv"
+            self.assertEqual(dev.read_bytes(), b"row_id\tsplit\tx\nK1\ttrain\tA\nK3\tvalidation\tB\n")
+            dev.write_bytes(dev.read_bytes() + b"x")
+            with self.assertRaisesRegex(ValueError, "projection"):
+                verify(out, source, expected)
+            source.write_bytes(b"changed")
+            with self.assertRaisesRegex(ValueError, "full dataset"):
+                verify(out, source, expected)
+
+    def test_deployed_k_quant_grids_reconstruct_gguf_codes(self):
+        try:
+            import gguf
+            import numpy as np
+            from flash_precision import grid
+        except ImportError:
+            self.skipTest("tuning environment required")
+        rng = np.random.default_rng(5)
+        for kind in (gguf.GGMLQuantizationType.Q5_K, gguf.GGMLQuantizationType.Q6_K):
+            packed = rng.integers(0, 256, (3, gguf.GGML_QUANT_SIZES[kind][1]), dtype=np.uint8)
+            if kind == gguf.GGMLQuantizationType.Q5_K:
+                packed[:, :4] = np.array([.0625, .125], dtype=np.float16).view(np.uint8)
+            else:
+                packed[:, -2:] = np.array([.0625], dtype=np.float16).view(np.uint8)
+            scales, offsets, lo, hi = grid(SimpleNamespace(tensor_type=kind, data=packed))
+            decoded = gguf.dequantize(packed, kind).reshape(scales.size, -1)
+            scale, offset = scales.reshape(-1, 1), offsets.reshape(-1, 1)
+            codes = np.rint((decoded - offset) / np.where(scale == 0, 1, scale)).clip(lo, hi)
+            np.testing.assert_allclose(codes * scale + offset, decoded)
+
+    def test_native_multitoken_verdict_and_missing_alternative(self):
+        from ollama_native import native_verdict
+
+        forms = {"Safe": " Safe", "Unsafe": " Unsafe", "Controversial": " Cont"}
+        first = dict(token=" Cont", logprob=-1, top_logprobs=[
+            dict(token=" Safe", logprob=-2), dict(token=" Unsafe", logprob=-3)])
+        reply = dict(response=" Controversial", logprobs=[first], done=True)
+        p, label = native_verdict(reply, forms)
+        self.assertEqual(label, "Controversial")
+        self.assertAlmostEqual(p, 0.7552715289)
+        first["top_logprobs"].pop()
+        with self.assertRaisesRegex(ValueError, "alternative"):
+            native_verdict(reply, forms)
+
     def test_mezzo_native_tei_keeps_independent_sigmoids(self):
         from math import exp
         from backends import mezzo_score

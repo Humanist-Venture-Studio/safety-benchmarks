@@ -36,6 +36,8 @@ def main():
     p.add_argument("--size-bytes", type=int)
     p.add_argument("--licence", default="")
     a = p.parse_args()
+    from tier_data import verify_input
+    verify_input(a.data)
     rows = selection(a.data, a.split)
     if a.limit is not None:
         require(0 < a.limit <= len(rows), "--limit must be between 1 and the selected split size")

@@ -109,6 +109,8 @@ def prepare(a):
             and not getattr(a, "init_checkpoint", None),
             "OOF models must start independently from upstream weights",
         )
+    from tier_data import verify_input
+    verify_input(a.data)
     a._started = time.monotonic()
     a.out.mkdir(parents=True, exist_ok=False)
     torch.manual_seed(a.seed)
