@@ -80,7 +80,7 @@ def fold_errors(model, meta):
     return diagnose(rows, meta)
 
 
-def save_recipes(out, meta):
+def save_recipes(out, meta, commands):
     """Keep source revisions, selected groups and exact row memberships alongside the local evidence."""
     from spark_experiment import MODELS, WORK
 
@@ -135,6 +135,12 @@ def save_recipes(out, meta):
         development_sha256=hashlib.sha256(DATA.read_bytes()).hexdigest(),
         seed=20261117,
         sources=sources,
+        spark_experiment_arguments=[
+            e.get("replay_args", e["argv"][1:])
+            for e in sorted(
+                (e for e in commands if e.get("action")), key=lambda e: e["start"]
+            )
+        ],
         fits=recipes,
     )
     (out / "fit-recipes.json").write_text(json.dumps(report, indent=2) + "\n")
@@ -170,6 +176,7 @@ def main():
     ]
     report, details, miss_rows, tables = [], [], [], {}
     memberships = {}
+    artifact_hashes = {}
     for split in SPLITS:
         lines = [
             "| Candidate | Pass | Calibrated cutoff | Accuracy, raw → selected | FPR, raw → selected | Missed / 100, raw → selected | Recall | Precision | AUROC | PR-AUC | Brier | Malformed | Median ms | Bytes | Licence | Unique fit rows | Machine min |",
@@ -203,6 +210,24 @@ def main():
                     "paired row mismatch",
                 )
                 raw_counts = counts(raw)
+                artifact = (
+                    RUNS
+                    / name
+                    / (
+                        "candidate.gguf"
+                        if model == "smollm"
+                        else "hf/model.safetensors"
+                    )
+                )
+                require(
+                    artifact.stat().st_size == int(raw[0]["size_bytes"]) <= 250_000_000,
+                    "retained artifact size diverged from benchmark",
+                )
+                if name not in artifact_hashes:
+                    with artifact.open("rb") as f:
+                        artifact_hashes[name] = hashlib.file_digest(
+                            f, "sha256"
+                        ).hexdigest()
                 if split == "validation" and stage == "r2":
                     for r in diagnose(chosen, meta):
                         miss_rows.append({"model": model, **r})
@@ -250,6 +275,13 @@ def main():
                     f"missing timing for {name}",
                 )
                 seconds = sum(e["seconds"] for e in timings)
+                seconds += sum(
+                    e["fit_setup_seconds"]
+                    for e in commands
+                    if "fit_setup_seconds" in e
+                    and e["model"] == model
+                    and e["stage"] == stage
+                )
                 seconds -= sum(
                     e["sleep_estimate"]
                     for e in commands
@@ -304,6 +336,7 @@ def main():
                         fit_minutes=info.get("wall_seconds", 0) / 60,
                         pass_minutes=seconds / 60,
                         deployed_bytes=raw[0]["size_bytes"],
+                        deployed_sha256=artifact_hashes[name],
                         licence=LICENSE[model],
                     )
                 )
@@ -331,7 +364,7 @@ def main():
             "| Always safe | Reference | — | 90.0% | 0.00% | 100 | 0% | — | 0.5000 | 0.1000 | 0.1000 | 0 | — | — | — | 0 | 0 |"
         )
         tables[split] = "\n".join(lines)
-    save_recipes(a.out, meta)
+    save_recipes(a.out, meta, commands)
     write(a.out / "pass-metadata.tsv", report)
     write(a.out / "metrics.tsv", details)
     write(a.out / "round2-errors.tsv", miss_rows)

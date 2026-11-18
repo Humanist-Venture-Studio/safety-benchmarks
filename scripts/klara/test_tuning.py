@@ -58,6 +58,61 @@ class GuardTuningChecks(unittest.TestCase):
         with self.assertRaises(ValueError):
             differences(rows, [[0, 0]], spec)
 
+    def test_oof_missed_positive_repeats_its_safe_lookalike(self):
+        from training import resample_groups
+
+        rows = [
+            dict(row_id="risk", is_unsafe="1", rule_id="A1", look_alike_of=""),
+            dict(row_id="near", is_unsafe="0", rule_id="", look_alike_of="risk"),
+            dict(row_id="other", is_unsafe="0", rule_id="", look_alike_of=""),
+        ]
+        weak, pairs, repeat = resample_groups(rows, {"risk", "outside-fit"}, 18, True)
+        self.assertEqual(weak, ["A1"])
+        self.assertTrue(pairs)
+        self.assertEqual(repeat, {"risk", "near"})
+
+    def test_packed_browser_matrices_match_gguf_blocks(self):
+        try:
+            import gguf
+            import numpy as np
+            from onnx import helper, numpy_helper, TensorProto
+            from onnx.reference import ReferenceEvaluator
+            from export_smol_browser import pack_matrices
+        except ImportError:
+            self.skipTest("requires tuning environment")
+        rng = np.random.default_rng(11)
+        embed = rng.normal(size=(8, 32)).astype("float32")
+        weight = rng.normal(size=(32, 2)).astype("float32")
+        x = helper.make_tensor_value_info("ids", TensorProto.INT64, [None])
+        y = helper.make_tensor_value_info("logits", TensorProto.FLOAT, [None, 2])
+        graph = helper.make_graph(
+            [
+                helper.make_node("Gather", ["embed", "ids"], ["x"]),
+                helper.make_node("MatMul", ["x", "w"], ["logits"]),
+            ],
+            "q8",
+            [x],
+            [y],
+            [
+                numpy_helper.from_array(embed, "embed"),
+                numpy_helper.from_array(weight, "w"),
+            ],
+        )
+        self.assertEqual(pack_matrices(graph), 2)
+        model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 18)])
+        ids = np.array([1, 7])
+        result = ReferenceEvaluator(model).run(None, {"ids": ids})[0]
+        typ = gguf.GGMLQuantizationType.Q8_0
+
+        def q8(matrix):
+            return gguf.dequantize(
+                gguf.quantize(np.ascontiguousarray(matrix), typ), typ
+            )
+
+        np.testing.assert_allclose(
+            result, q8(embed)[ids] @ q8(weight.T).T, atol=1e-6, rtol=1e-6
+        )
+
     def test_q8_aware_matches_converter_and_trains_lora(self):
         try:
             import torch

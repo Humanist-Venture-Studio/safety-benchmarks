@@ -1,0 +1,14 @@
+{
+  "sample": 200,
+  "unsafe_rows": 33,
+  "paired": 200,
+  "seconds": 12.05424258398125,
+  "threshold": 0.7851721179787163,
+  "graph_bytes": 137408929,
+  "files_bytes": 140994583,
+  "flips": 1,
+  "max_abs_raw": 0.017310901691717007,
+  "mean_abs_raw": 0.00019672709269241467,
+  "max_abs_calibrated": 0.005174855150107516,
+  "mean_abs_calibrated": 5.677931661940501e-05
+}

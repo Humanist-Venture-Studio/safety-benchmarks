@@ -1,0 +1,10 @@
+candidate	stage	observations	check	max_absolute_delta
+mezzo	baseline	5	FP16 TEI versus PyTorch raw logits	0.046764373779296875
+mezzo	r1	5	FP16 TEI versus PyTorch raw logits	0.00439143180847168
+mezzo	r2	5	FP16 TEI versus PyTorch raw logits	0.005934715270996094
+ettin	baseline	5	FP16 TEI versus PyTorch raw logits	0.021535873413085938
+ettin	r1	5	FP16 TEI versus PyTorch raw logits	0.004652976989746094
+ettin	r2	5	FP16 TEI versus PyTorch raw logits	0.010170936584472656
+smollm	baseline	1	Ollama native rendered prompt length agreed with HF on registration	0
+smollm	r1	5	HF/GGUF token IDs, served prompt length and unsafe-minus-safe margin	0.13198279589414597
+smollm	r2	5	HF/GGUF token IDs, served prompt length and unsafe-minus-safe margin	0.13832846656441689

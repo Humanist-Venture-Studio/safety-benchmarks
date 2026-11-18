@@ -68,7 +68,7 @@ def options(description):
     p.add_argument(
         "--repeat-lookalikes",
         action="store_true",
-        help="also repeat safe look-alikes if any was falsely flagged in train OOF",
+        help="also repeat safe look-alikes if they or their linked unsafe examples were missed in train OOF",
     )
     return p
 
@@ -228,6 +228,31 @@ def verdict_loss(logits, labels, verdict_ids, smoothing):
     return loss
 
 
+def resample_groups(train, errors, weak_count, include_lookalikes):
+    """Translate held-fold errors into repetitions within the final optimizer partition."""
+    rule_counts = defaultdict(list)
+    for row in train:
+        if row["is_unsafe"] == "1":
+            rule_counts[row["rule_id"]].append(row["row_id"] in errors)
+    weak = sorted(
+        (k for k, v in rule_counts.items() if any(v)),
+        key=lambda k: (-sum(rule_counts[k]) / len(rule_counts[k]), k),
+    )[:weak_count]
+    weak_lookalikes = include_lookalikes and any(
+        r.get("look_alike_of")
+        and (r["row_id"] in errors or r["look_alike_of"] in errors)
+        for r in train
+    )
+    repeat = {
+        r["row_id"]
+        for r in train
+        if r["row_id"] in errors
+        or r["rule_id"] in weak
+        or (weak_lookalikes and r.get("look_alike_of"))
+    }
+    return weak, weak_lookalikes, repeat
+
+
 def fit(model, tokenizer, encode, forward, rows, a):
     """forward returns class logits and the unweighted per-example training losses."""
     import torch
@@ -240,22 +265,9 @@ def fit(model, tokenizer, encode, forward, rows, a):
         and (a.oof or not (a.weak_rule_count or a.repeat_lookalikes)),
         "group resampling requires train-only OOF predictions",
     )
-    rule_counts = defaultdict(list)
-    for row in train:
-        if row["is_unsafe"] == "1":
-            rule_counts[row["rule_id"]].append(row["row_id"] in errors)
-    weak = sorted(
-        (k for k, v in rule_counts.items() if any(v)),
-        key=lambda k: (-sum(rule_counts[k]) / len(rule_counts[k]), k),
-    )[: a.weak_rule_count]
-    weak_lookalikes = a.repeat_lookalikes and any(
-        r["row_id"] in errors and r.get("look_alike_of") for r in train
+    weak, weak_lookalikes, repeat = resample_groups(
+        train, errors, a.weak_rule_count, a.repeat_lookalikes
     )
-    repeat = errors | {
-        r["row_id"]
-        for r in rows
-        if r["rule_id"] in weak or (weak_lookalikes and r.get("look_alike_of"))
-    }
     cache = {r["row_id"]: encode(transcript(r)) for r in rows}
     eval_batch = a.eval_batch or a.batch
     if a.eval_batch:

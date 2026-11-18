@@ -75,6 +75,7 @@ def enable_smol_q8(model):
         model.config.model_type == "llama" and model.config.tie_word_embeddings,
         "Spark Q8 training expects tied SmolLM2 embeddings",
     )
+    model.tie_weights()
     require(
         model.get_input_embeddings().weight is model.get_output_embeddings().weight,
         "expected shared embedding and output weights",
