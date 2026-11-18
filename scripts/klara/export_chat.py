@@ -8,15 +8,13 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import uuid
 from pathlib import Path
 
 from backends import CHAT_PROMPT, request_json
 from common import WORK, require
-from peft import PeftModel
-from train_chat import load_base, token_pair
 from training import MODELS
-from transformers import AutoTokenizer
 
 TEMPLATE = '{{range .Messages}}{{if eq .Role "system"}}System: {{.Content}}\n{{else if eq .Role "user"}}User: {{.Content}}\n{{end}}{{end}}Assistant:'
 # Current Ollama uses the GGUF's embedded Jinja template ahead of the Modelfile.
@@ -29,6 +27,17 @@ BOUNDS = {
     "flash": (1_000_000_000, 2_000_000_000),
     "maxx": (4_000_000_000, 5_000_000_000),
 }
+
+
+def preserve_tokenizer_metadata(source_config, staged_config):
+    # Transformers 5 can save a specific GPT2Tokenizer as TokenizersBackend.
+    # llama.cpp uses the original class to select Phi's BPE or SentencePiece tokenizer.
+    original = json.loads(source_config.read_text())
+    saved = json.loads(staged_config.read_text())
+    for key in ("tokenizer_class", "add_bos_token", "add_eos_token"):
+        if key in original:
+            saved[key] = original[key]
+    staged_config.write_text(json.dumps(saved, ensure_ascii=False, indent=2) + "\n")
 
 
 def register(a, out, tag, check_tag, embedded, tok):
@@ -84,6 +93,10 @@ def register(a, out, tag, check_tag, embedded, tok):
 
 
 def main():
+    from peft import PeftModel
+    from train_chat import load_base, token_pair
+    from transformers import AutoTokenizer
+
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument(
         "--run",
@@ -129,6 +142,8 @@ def main():
         help="retry import of an existing run GGUF",
     )
     a = p.parse_args()
+    started = time.monotonic()
+    timings = {}
     require(
         a.run.resolve().is_relative_to(MODELS.resolve())
         and re.fullmatch(r"[a-z0-9-]+", a.name),
@@ -200,14 +215,25 @@ def main():
                 merged.save_pretrained(hf)
                 tok.chat_template = JINJA
                 tok.save_pretrained(hf)
+                if (
+                    merged.config.model_type == "phi3"
+                    and (source / "tokenizer_config.json").is_file()
+                ):
+                    preserve_tokenizer_metadata(
+                        source / "tokenizer_config.json", hf / "tokenizer_config.json"
+                    )
                 del merged, base
             if a.merge_only:
                 require(not prepared.exists(), "prepared checkpoint already exists")
                 hf.rename(prepared)
+                (a.run / "merge-timing.json").write_text(
+                    json.dumps({"seconds": time.monotonic() - started})
+                )
                 print(prepared)
                 return
         direct = a.quant in ("F16", "Q8_0")
         tmp = scratch / "converted.gguf"
+        tick = time.monotonic()
         subprocess.run(
             [
                 sys.executable,
@@ -220,19 +246,26 @@ def main():
             ],
             check=True,
         )
+        timings["convert_seconds"] = time.monotonic() - tick
+        timings["quantize_seconds"] = 0.0
         if not a.baseline_source:
             shutil.rmtree(hf)  # Private staging, or the explicitly consumed merge.
         if not direct:
+            tick = time.monotonic()
             quantized = scratch / "quantized.gguf"
             subprocess.run(
                 ["llama-quantize", str(tmp), str(quantized), a.quant], check=True
             )
+            timings["quantize_seconds"] = time.monotonic() - tick
             tmp = quantized
         size = tmp.stat().st_size
         low, high = BOUNDS[a.tier]
         require(low <= size <= high, f"GGUF size {size} outside {a.tier} bounds")
         tmp.rename(out)
+    tick = time.monotonic()
     register(a, out, tag, check_tag, embedded, tok)
+    timings["register_seconds"] = time.monotonic() - tick
+    (a.run / "export-timing.json").write_text(json.dumps(timings))
     print(json.dumps({"tag": tag, "bytes": size, "tokens": words, "ids": ids}))
 
 

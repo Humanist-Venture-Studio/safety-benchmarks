@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 import torch
-from backends import CHAT_PROMPT
+from backends import chat_prompt
 from common import require
 from peft import LoraConfig, PeftModel, get_peft_model
 from torch.nn import functional as F
@@ -15,11 +15,6 @@ from transformers import (
     AutoModelForImageTextToText,
     AutoTokenizer,
 )
-
-
-# The Ollama Go template in export_chat.py emits exactly these bytes for the two harness messages.
-def prompt(text):
-    return f"System: {CHAT_PROMPT}\nUser: {text}\nAssistant:"
 
 
 def load_base(path):
@@ -33,7 +28,7 @@ def load_base(path):
 
 
 def token_pair(tok):
-    prefix = prompt("[]")
+    prefix = chat_prompt("[]")
     start = tok.encode(prefix, add_special_tokens=False)
     ids, words = [], []
     for label in ("safe", "unsafe"):
@@ -119,7 +114,7 @@ def main():
             logits, verdict_ids[y], reduction="none"
         )
 
-    fit(model, tok, lambda text: tok.encode(prompt(text)), forward, rows, a)
+    fit(model, tok, lambda text: tok.encode(chat_prompt(text)), forward, rows, a)
     model.save_pretrained(a.out / "adapter")
     (a.out / "chat.json").write_text(
         json.dumps(

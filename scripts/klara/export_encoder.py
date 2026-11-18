@@ -1,7 +1,9 @@
 """Export a tuned ModernBERT binary head for Transformers.js with dynamic axes."""
 
 import argparse
+import json
 import tempfile
+import time
 from pathlib import Path
 
 import onnx
@@ -47,6 +49,7 @@ def main():
     require(
         a.out.resolve().is_relative_to(MODELS.resolve()), "use the task model directory"
     )
+    start = time.monotonic()
     model = AutoModelForSequenceClassification.from_pretrained(
         a.hf, dtype=torch.float32, attn_implementation="eager"
     ).eval()
@@ -82,6 +85,7 @@ def main():
                 "logits": {0: "batch"},
             },
         )
+        converted = time.monotonic()
         if a.dtype == "q8":
             quantize_dynamic(
                 graph,
@@ -95,6 +99,16 @@ def main():
     size = sum(path.stat().st_size for path in a.out.rglob("*") if path.is_file())
     require(size <= 250_000_000, f"browser artifact exceeds spark tier: {size} bytes")
     print(f"browser package {size} bytes")
+    print(
+        json.dumps(
+            {
+                "convert_seconds": converted - start,
+                "quantize_seconds": time.monotonic() - converted,
+                "dtype": a.dtype,
+                "bytes": size,
+            }
+        )
+    )
 
 
 if __name__ == "__main__":

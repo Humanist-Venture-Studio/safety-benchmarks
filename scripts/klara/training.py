@@ -5,6 +5,8 @@ import hashlib
 import json
 import math
 import random
+import resource
+import sys
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -208,12 +210,17 @@ def fit(model, tokenizer, encode, forward, rows, a):
         y = torch.tensor([int(r["is_unsafe"]) for r in batch_rows], device=a.device)
         return forward(x, y), y, sum(map(len, ids))
 
+    driver_peak = 0
+
     def step(group, update=True):
+        nonlocal driver_peak
         (_logits, losses), y, tokens = batch(group)
         weights = torch.where(y.bool(), a.positive_weight, 1.0)
         loss = (losses * weights).mean()
         require(math.isfinite(loss.item()), "non-finite training loss")
         loss.backward()
+        if a.device == "mps":
+            driver_peak = max(driver_peak, torch.mps.driver_allocated_memory())
         if update:
             torch.nn.utils.clip_grad_norm_(params, 1.0, error_if_nonfinite=True)
             optimizer.step()
@@ -235,6 +242,19 @@ def fit(model, tokenizer, encode, forward, rows, a):
     rate = pilot_tokens / (time.monotonic() - sample_start)
     optimizer.state.clear()
     optimizer.param_groups[0]["lr"] = a.lr
+    # Time inference separately: held-fold predictions need no backward pass.
+    # Use a separate RNG so measuring performance does not change the fit order.
+    model.eval()
+    eval_pilot = random.Random(a.seed + 3).sample(train, min(len(train), 3 * a.batch))
+    with torch.no_grad():
+        batch(pilot)[0][1].mean().item()  # warm up the evaluation kernels
+        tick = time.monotonic()
+        eval_pilot_tokens = 0
+        for i in range(0, len(eval_pilot), a.batch):
+            (_, losses), _, count = batch(eval_pilot[i : i + a.batch])
+            losses.mean().item()  # synchronize, as the scoring path does
+            eval_pilot_tokens += count
+        eval_rate = eval_pilot_tokens / (time.monotonic() - tick)
     order = group_order(train, a.seed + 2)
     by_group = defaultdict(list)
     for row in train:
@@ -242,10 +262,15 @@ def fit(model, tokenizer, encode, forward, rows, a):
             [row] * (1 + a.extra_copies * (row["row_id"] in errors))
         )
     # Reserve time for early stopping and device variation. Choose whole groups.
-    # Reserve the held fold inference at a conservative measured-backward rate.
-    train_deadline = deadline - sum(len(cache[r["row_id"]]) for r in held) / rate
+    inference_budget_rate = 0.8 * eval_rate
+    train_deadline = (
+        deadline - sum(len(cache[r["row_id"]]) for r in held) / inference_budget_rate
+    )
     # Prefer a whole training pass when it fits; later epochs use the remaining time.
-    update_deadline = train_deadline - sum(len(cache[r["row_id"]]) for r in dev) / rate
+    update_deadline = (
+        train_deadline
+        - sum(len(cache[r["row_id"]]) for r in dev) / inference_budget_rate
+    )
     capacity = max(0.0, update_deadline - time.monotonic()) * rate * 0.65
     selected, planned = [], 0
     for key in order:
@@ -309,6 +334,9 @@ def fit(model, tokenizer, encode, forward, rows, a):
         model.load_state_dict(best, strict=False)
     report = {
         "optimizer_steps": steps,
+        "peak_rss_bytes": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        * (1 if sys.platform == "darwin" else 1024),
+        "sampled_mps_driver_peak_bytes": driver_peak,
         "examples": seen,
         "tokens": tokens,
         "optimizer_seconds": seconds,
@@ -320,6 +348,9 @@ def fit(model, tokenizer, encode, forward, rows, a):
         "pilot_examples": len(pilot),
         "pilot_tokens": pilot_tokens,
         "pilot_tokens_per_second": rate,
+        "eval_pilot_examples": len(eval_pilot),
+        "eval_pilot_tokens": eval_pilot_tokens,
+        "eval_pilot_tokens_per_second": eval_rate,
         "scenario_ids": sorted({r["scenario_id"] for r in selected}),
         "selected_examples": len(selected),
         "available_examples": len(train),

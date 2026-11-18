@@ -23,6 +23,11 @@ TIERS = {"spark": ("tei", "klara/spark"), "flash": ("ollama", "klara/flash"),
 LABELS = ("safe", "unsafe")
 
 
+# The Ollama Go template in export_chat.py emits exactly these bytes for the two harness messages.
+def chat_prompt(text):
+    return f"System: {CHAT_PROMPT}\nUser: {text}\nAssistant:"
+
+
 def probability(value):
     require(type(value) in (float, int) and 0 <= value <= 1, "expected finite probability in [0,1]")
     return float(value)
