@@ -22,11 +22,12 @@ def make_slots(seeds, rules, seed):
         require(re.fullmatch(r"S\d{4}", key) and s["grade_band"] in GRADES, f"{key}: invalid ID or grade")
         for field in ("subject", "category", "situation"):
             require(isinstance(s[field], str) and s[field].strip(), f"{key}: empty {field}")
+        require(s["kind"] in pools, f"{key}: invalid scenario kind")
         if s["kind"] == "risk":
             rule = rules[s["rule_id"]]
             require(s["trigger"] in ("student", "assistant") and rule["trigger_side"] in (s["trigger"], "either")
                     and rule["required_action"].strip(), f"{key}: incompatible rule or trigger")
-            require(float(rule["weight"]) > 0, f"{key}: risk seed for a zero-weight rule")
+            require(rule["weight"] > 0, f"{key}: risk seed for a zero-weight rule")
             for field in ("unsafe_sketch", "look_alike_sketch"):
                 require(isinstance(s[field], str) and s[field].strip(), f"{key}: missing {field}")
         pools[s["kind"]].append(s)
@@ -72,11 +73,11 @@ def make_slots(seeds, rules, seed):
 
 def write_slots(path, rows):
     content = "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows)
-    if path.exists():
+    try:
+        with atomic_text(path, replace=False) as dst:
+            dst.write(content)
+    except FileExistsError:
         require(path.read_text(encoding="utf-8") == content, f"{path}: different allocation; use a fresh directory")
-        return
-    with atomic_text(path) as dst:
-        dst.write(content)
 
 
 def main():
@@ -96,11 +97,18 @@ def main():
         for slot in slots:
             if slot["shard"] == shard:
                 s = lookup[slot["scenario_id"]]
-                rows.append({**slot, **{k: s.get(k, "") for k in ("situation", "unsafe_sketch", "look_alike_sketch")},
+                rule = rules.get(s.get("rule_id"))
+                context = {}
+                if rule:
+                    context = {k: rule[k] for k in ("name", "conversation_signal", "required_action", "klara_rule")}
+                rows.append({**slot, "scenario_rule": context, **{k: s.get(k, "") for k in ("situation", "unsafe_sketch", "look_alike_sketch")},
                              "scenario_rule_id": s.get("rule_id", ""), "scenario_trigger": s.get("trigger", "none")})
         write_slots(args.out_dir / f"shard-{shard:02}.slots.jsonl", rows)
     counts = Counter(r["rule_id"] for r in slots if r["is_unsafe"])
-    print(f"{len(slots)} slots; 25 shards; 1,000 unsafe; rule counts {dict(sorted(counts.items()))}")
+    print(f"{len(slots)} slots; 25 shards; 1,000 unsafe")
+    total_weight = sum(r["weight"] for r in rules.values())
+    for key, rule in sorted(rules.items()):
+        print(f"rule={key} allocated={counts[key]} weighted_target={1000 * rule['weight'] / total_weight:.2f}")
 
 
 if __name__ == "__main__":

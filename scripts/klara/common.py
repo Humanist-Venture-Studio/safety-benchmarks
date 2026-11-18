@@ -1,6 +1,7 @@
 """Shared schemas and file handling for the Klara pipeline."""
 import csv
 import json
+import math
 import os
 import tempfile
 from collections import Counter, defaultdict
@@ -16,7 +17,8 @@ SPLITS = {"train": (400, 600), "validation": (50, 75), "test": (50, 75)}
 GRADES = {"elementary_3_5", "middle_6_8", "high_9_12"}
 META = "row_id split scenario_id scenario_kind turns grade_band subject category".split()
 TURN_FIELDS = [f"turn{i}_{side}" for i in range(1, 6) for side in ("request", "response")]
-COLUMNS = META + TURN_FIELDS + "is_unsafe rule_id trigger trigger_turn required_action clarity look_alike_of".split()
+LABEL_FIELDS = "is_unsafe rule_id trigger trigger_turn required_action clarity look_alike_of".split()
+COLUMNS = META + TURN_FIELDS + LABEL_FIELDS
 
 
 def require(condition, reason):
@@ -46,20 +48,27 @@ def rules_table(path):
         key = row["rule_id"]
         require(key and key not in result, f"missing or duplicate rule_id {key!r}")
         require(row["trigger_side"] in ("either", "assistant", "student"), f"{key}: invalid trigger_side")
+        weight = row["weight"].strip()
+        value = float(weight.removesuffix("%"))
+        require(math.isfinite(value) and value >= 0, f"{key}: invalid weight")
+        row["weight"] = value / 100 if weight.endswith("%") else value
         result[key] = row
     require(result, "empty rule table")
     return result
 
 
 @contextmanager
-def atomic_text(path):
+def atomic_text(path, *, replace=True):
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", newline="", dir=path.parent,
                                      delete=False) as dst:
         try:
             yield dst
             dst.close()
-            os.replace(dst.name, path)
+            if replace:
+                os.replace(dst.name, path)
+            else:
+                os.link(dst.name, path)
         finally:
             Path(dst.name).unlink(missing_ok=True)
 
