@@ -29,6 +29,11 @@ def options(description):
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--tier", choices=["spark", "flash", "maxx"], default="spark")
     p.add_argument("--seconds", type=float, help="optimization and early-stop budget")
+    p.add_argument(
+        "--max-planning-rate",
+        type=float,
+        help="cap the backward pilot at a measured sustained tokens/s when selecting scenarios",
+    )
     p.add_argument("--epochs", type=int, default=2)
     p.add_argument("--lr", type=float, default=3e-5)
     p.add_argument("--positive-weight", type=float, default=3)
@@ -67,6 +72,11 @@ def prepare(a):
         and a.max_length > 0
         and a.extra_copies >= 0,
         "invalid fit settings",
+    )
+    require(
+        a.max_planning_rate is None
+        or (math.isfinite(a.max_planning_rate) and a.max_planning_rate > 0),
+        "planning rate cap must be finite and positive",
     )
     if a.seconds is None:
         a.seconds = {"spark": 1200, "flash": 5400, "maxx": 10800}[a.tier]
@@ -186,6 +196,21 @@ def missed_ids(paths, rows, folds, a):
     return bad
 
 
+def verdict_loss(logits, labels, verdict_ids, smoothing):
+    from torch.nn import functional as F
+
+    # Use one log-sum-exp even with smoothing. The second cross-entropy differs
+    # from the first only by the difference between the two target logits.
+    targets = verdict_ids[labels]
+    loss = F.cross_entropy(logits, targets, reduction="none")
+    if smoothing:
+        other = verdict_ids[1 - labels]
+        loss = loss + smoothing * (
+            logits.gather(1, targets[:, None]) - logits.gather(1, other[:, None])
+        ).squeeze(1)
+    return loss
+
+
 def fit(model, tokenizer, encode, forward, rows, a):
     """forward returns class logits and the unweighted per-example training losses."""
     import torch
@@ -271,7 +296,8 @@ def fit(model, tokenizer, encode, forward, rows, a):
         train_deadline
         - sum(len(cache[r["row_id"]]) for r in dev) / inference_budget_rate
     )
-    capacity = max(0.0, update_deadline - time.monotonic()) * rate * 0.65
+    planning_rate = min(rate, a.max_planning_rate) if a.max_planning_rate else rate
+    capacity = max(0.0, update_deadline - time.monotonic()) * planning_rate * 0.65
     selected, planned = [], 0
     for key in order:
         group = by_group[key]
@@ -348,6 +374,7 @@ def fit(model, tokenizer, encode, forward, rows, a):
         "pilot_examples": len(pilot),
         "pilot_tokens": pilot_tokens,
         "pilot_tokens_per_second": rate,
+        "planning_tokens_per_second": planning_rate,
         "eval_pilot_examples": len(eval_pilot),
         "eval_pilot_tokens": eval_pilot_tokens,
         "eval_pilot_tokens_per_second": eval_rate,

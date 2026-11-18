@@ -1,5 +1,7 @@
-"""Headless selection and probability regression probes. No downloads or model runtime."""
+"""Offline probes for the fixture, grouped selection, verdict loss and serving checks."""
 
+import hashlib
+import io
 import json
 import tempfile
 import unittest
@@ -8,12 +10,21 @@ from types import SimpleNamespace
 
 from calibrate import apply
 from export_chat import preserve_tokenizer_metadata
+from make_tuning_fixture import write_fixture
 from metrics import metrics
 from training import fingerprint, missed_ids, partition
 from verify_chat import compare_verdict, reference_key
 
 
 class GuardTuningChecks(unittest.TestCase):
+    def test_fixture_reproduces_measured_rows(self):
+        output = io.StringIO(newline="")
+        write_fixture(output)
+        digest = hashlib.sha256(output.getvalue().encode("utf-8")).hexdigest()
+        self.assertEqual(
+            digest, "1638d9b98b51dbe6defe7c0cb0f80a0ffd021c2865e8ef3d7041d3a4b9aab577"
+        )
+
     def test_saved_reference_binds_inputs_and_both_adapters(self):
         with tempfile.TemporaryDirectory() as temp:
             run = Path(temp)
@@ -87,6 +98,29 @@ class GuardTuningChecks(unittest.TestCase):
                     "add_eos_token": False,
                     "pad_token": "<pad>",
                 },
+            )
+
+    def test_verdict_loss_matches_full_vocabulary_targets_and_gradients(self):
+        try:
+            import torch
+        except ImportError:
+            self.skipTest("tuning environment supplies PyTorch")
+        from training import verdict_loss
+
+        x = torch.tensor(
+            [[0.0, 1.0, 2.0, -1.0], [3.0, -4.0, 2.0, 1.0]], requires_grad=True
+        )
+        labels, ids = torch.tensor([0, 1]), torch.tensor([3, 1])
+        for smoothing in (0.0, 0.05):
+            target = torch.zeros_like(x)
+            target[torch.arange(2), ids[labels]] = 1.0 - smoothing
+            target[torch.arange(2), ids[1 - labels]] = smoothing
+            expected = -(target * x.log_softmax(-1)).sum(-1)
+            measured = verdict_loss(x, labels, ids, smoothing)
+            torch.testing.assert_close(measured, expected)
+            torch.testing.assert_close(
+                torch.autograd.grad(measured.sum(), x)[0],
+                torch.autograd.grad(expected.sum(), x)[0],
             )
 
     def test_tied_pr_auc_brier_and_missing_output(self):

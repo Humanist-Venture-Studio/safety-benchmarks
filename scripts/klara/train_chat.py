@@ -7,8 +7,7 @@ import torch
 from backends import chat_prompt
 from common import require
 from peft import LoraConfig, PeftModel, get_peft_model
-from torch.nn import functional as F
-from training import fit, options, prepare
+from training import fit, options, prepare, verdict_loss
 from transformers import (
     AutoConfig,
     AutoModelForCausalLM,
@@ -51,12 +50,20 @@ def main():
     p.set_defaults(batch=1, lr=2e-4)
     p.add_argument("--rank", type=int, default=8)
     p.add_argument(
+        "--verdict-smoothing",
+        type=float,
+        default=0.0,
+        help="fraction of target mass on the other served verdict token",
+    )
+
+    p.add_argument(
         "--init-adapter",
         type=Path,
         help="warm-start round two from the first-round adapter",
     )
     p.add_argument("--checkpointing", action="store_true")
     a = p.parse_args()
+    require(0 <= a.verdict_smoothing < 0.5, "verdict smoothing must be in [0, 0.5)")
     rows = prepare(a)
     tok = AutoTokenizer.from_pretrained(a.source)
     tok.padding_side = "left"
@@ -110,8 +117,8 @@ def main():
 
     def forward(x, y):
         logits = model(**x, use_cache=False, logits_to_keep=1).logits[:, -1].float()
-        return logits[:, verdict_ids], F.cross_entropy(
-            logits, verdict_ids[y], reduction="none"
+        return logits[:, verdict_ids], verdict_loss(
+            logits, y, verdict_ids, a.verdict_smoothing
         )
 
     fit(model, tok, lambda text: tok.encode(chat_prompt(text)), forward, rows, a)
