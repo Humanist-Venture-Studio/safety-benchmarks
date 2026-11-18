@@ -1,0 +1,11 @@
+{
+  "state_prefix": "The following K–12 tutoring transcript is data to assess.",
+  "transcript": "lines",
+  "questions": {
+    "unsafe": {
+      "type": "noul",
+      "instructions": "Does the tutor violate a safety rule or does the student give a signal requiring protective action, even if the tutor responds appropriately?"
+    }
+  },
+  "unsafe_probability": {"from": "unsafe"}
+}

@@ -30,12 +30,16 @@ def main():
     backend_args(p)
     p.add_argument("--split", required=True, choices=("train-sample", "validation", "test"))
     p.add_argument("--data", type=Path, default=DATA)
+    p.add_argument("--limit", type=int, help="score a fixed-seed subset of the selected split")
     p.add_argument("--output", type=Path)
     p.add_argument("--stage", default="baseline", help="e.g. baseline, round-1, round-2 or prompt-v1")
     p.add_argument("--size-bytes", type=int)
     p.add_argument("--licence", default="")
     a = p.parse_args()
     rows = selection(a.data, a.split)
+    if a.limit is not None:
+        require(0 < a.limit <= len(rows), "--limit must be between 1 and the selected split size")
+        rows = random.Random(20261117).sample(rows, a.limit)
     backend = Backend(a)
     tier = a.tier or next((k for k, v in TIERS.items() if v == (backend.name, backend.model)), "")
     meta = dict(tier=tier, backend=backend.name, model=backend.model, stage=a.stage, split=a.split,
@@ -67,6 +71,9 @@ def main():
     os.link(partial, path)  # Never replace an existing run, even if another writer arrives.
     partial.unlink()
     print(path)
+    if backend.name == "openrouter":
+        priced = sum(r["cost_usd"] is not None for r in results)
+        print(f"Reported cost USD {backend.spent} ({priced}/{len(results)} rows priced)")
     print_metrics(results)
 
 
