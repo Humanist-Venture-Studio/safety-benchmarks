@@ -109,7 +109,7 @@ def cloud_score(data):
 
 
 def backend_args(p):
-    p.add_argument("--backend", choices=("tei", "ollama", "openrouter"))
+    p.add_argument("--backend", choices=("tei", "ollama", "openrouter", "hf-native"))
     p.add_argument("--model")
     p.add_argument("--tier", choices=TIERS)
     p.add_argument("--endpoint", help="local backend base URL; cloud uses the fixed HTTPS endpoint")
@@ -119,7 +119,9 @@ def backend_args(p):
     p.add_argument("--unsafe-token", help="exact first token text for the unsafe Ollama verdict")
     p.add_argument("--safe-label", default="safe", help="TEI id2label value")
     p.add_argument("--unsafe-label", default="unsafe", help="TEI id2label value")
-    p.add_argument("--threshold", type=float, default=0.5)
+    p.add_argument("--native", choices=("mezzo", "granite", "qwen-guard"), help="unmodified HF guard scoring recipe")
+    p.add_argument("--calibration", type=Path, help="fitted calibrate.py JSON")
+    p.add_argument("--threshold", type=float, help="default: fitted cutoff or 0.5")
     p.add_argument("--timeout", type=float, default=120, help="deadline per request in seconds")
 
 
@@ -131,7 +133,7 @@ class Backend:
         require(self.name and self.model, "specify --tier or --backend and --model")
         self.timeout = args.timeout
         require(math.isfinite(self.timeout) and self.timeout > 0, "timeout must be finite and positive")
-        self.threshold = probability(args.threshold)
+        self.threshold = probability(args.threshold if args.threshold is not None else .5)
         self.tokens = (args.safe_token, args.unsafe_token)
         self.labels = (args.safe_label, args.unsafe_label)
         require(self.labels[0] != self.labels[1], "TEI verdict labels must differ")
@@ -147,6 +149,10 @@ class Backend:
                     "invalid credential file")
             self.base = "https://openrouter.ai/api/v1"
             self.prompt = args.prompt_file.read_text(encoding="utf-8") if args.prompt_file else CLOUD_PROMPT
+        elif self.name == "hf-native":
+            from native_guard import NativeGuard
+            self.native = NativeGuard(self.model, args.native)
+            self.prompt = self.native.recipe
         else:
             default_url = "http://127.0.0.1:8080" if self.name == "tei" else "http://127.0.0.1:11434"
             self.base = (args.endpoint or default_url).rstrip("/")
@@ -156,13 +162,36 @@ class Backend:
                 self.prompt = ""
         self.prompt_hash = hashlib.sha256(self.prompt.encode()).hexdigest()
 
+        self.calibration = None
+        self.calibration_hash = ""
+        if getattr(args, "calibration", None):
+            content = args.calibration.read_bytes()
+            self.calibration = json.loads(content)
+            identity = dict(backend=self.name, model=self.model, prompt_sha256=self.prompt_hash,
+                            safe_token=args.safe_token or "", unsafe_token=args.unsafe_token or "",
+                            safe_label=args.safe_label, unsafe_label=args.unsafe_label)
+            require(self.calibration["identity"] == identity, "calibration does not match model or recipe")
+            require(self.calibration["fitted_on"] == "validation" and self.calibration["slope"] >= 0
+                    and all(math.isfinite(self.calibration[k]) for k in ("slope","intercept")), "invalid calibration")
+            if args.threshold is None:
+                self.threshold = probability(self.calibration["threshold"])
+            self.calibration_hash = hashlib.sha256(content).hexdigest()
+
     def score(self, messages):
         """Return contract, raw verdict, error and reported cost. Never echo remote error text."""
         usage = None
         text = json.dumps(messages, ensure_ascii=False, separators=(",", ":"))
         chat = [{"role": "system", "content": self.prompt}, {"role": "user", "content": text}]
         try:
-            if self.name == "tei":
+            if self.name == "hf-native":
+                old_handler = signal.signal(signal.SIGALRM, timeout_expired)
+                signal.setitimer(signal.ITIMER_REAL, self.timeout)
+                try:
+                    p, raw = self.native.score(messages)
+                finally:
+                    signal.setitimer(signal.ITIMER_REAL, 0)
+                    signal.signal(signal.SIGALRM, old_handler)
+            elif self.name == "tei":
                 reply = request_json(self.base + "/predict", self.timeout,
                                      {"inputs": text, "raw_scores": True, "truncate": False})
                 p, raw = tei_score(reply, self.labels)
@@ -179,9 +208,13 @@ class Backend:
                 if type(cost) in (float, int) and math.isfinite(cost) and cost >= 0:
                     usage = cost
                 p, raw = cloud_score(reply)
+            self.raw_probability = p
+            if self.calibration:
+                from calibrate import apply
+                p = apply(p, self.calibration)
             return verdict(p, self.threshold), raw, "", usage
         except (OSError, http.client.HTTPException, LookupError, TypeError, ValueError, AttributeError,
-                OverflowError, RecursionError) as exc:
+                OverflowError, RuntimeError) as exc:
             # Never persist arbitrary exception messages, provider text or echoed headers.
             reason = str(exc) if type(exc) is ValueError and self.name != "openrouter" else type(exc).__name__
             return None, "", reason or "invalid backend response", usage

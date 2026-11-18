@@ -13,6 +13,7 @@ def validate_run(rows):
     require(rows and set(FIELDS) <= set(rows[0]), "missing per-row results or fields")
     require(len({r["row_id"] for r in rows}) == len(rows), "duplicate result row_id")
     require(len({tuple(r[k] for k in IDENTITY) for r in rows}) == 1, "mixed run metadata")
+    require(len({r.get("calibration_sha256") for r in rows}) == 1, "mixed calibration")
     threshold = float(rows[0]["threshold"])
     require(0 <= threshold <= 1, "invalid threshold")
     for r in rows:

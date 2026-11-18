@@ -39,8 +39,8 @@ def main():
     backend = Backend(a)
     tier = a.tier or next((k for k, v in TIERS.items() if v == (backend.name, backend.model)), "")
     meta = dict(tier=tier, backend=backend.name, model=backend.model, stage=a.stage, split=a.split,
-                threshold=a.threshold, prompt_sha256=backend.prompt_hash, size_bytes=a.size_bytes, licence=a.licence,
-                safe_token=a.safe_token, unsafe_token=a.unsafe_token, safe_label=a.safe_label, unsafe_label=a.unsafe_label)
+                threshold=backend.threshold, prompt_sha256=backend.prompt_hash, size_bytes=a.size_bytes, licence=a.licence,
+                calibration_sha256=backend.calibration_hash, safe_token=a.safe_token, unsafe_token=a.unsafe_token, safe_label=a.safe_label, unsafe_label=a.unsafe_label)
     require(a.size_bytes is None or a.size_bytes > 0, "size must be positive")
     stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     path = a.output or WORK / "results" / f"{backend.name}-{a.split}-{stamp}.tsv"
@@ -49,7 +49,7 @@ def main():
     partial = path.with_suffix(path.suffix + ".partial")
     results = []
     with partial.open("x", encoding="utf-8", newline="") as out:
-        writer = csv.DictWriter(out, FIELDS, delimiter="\t", lineterminator="\n")
+        writer = csv.DictWriter(out, FIELDS + ["raw_probability", "calibration_sha256"], delimiter="\t", lineterminator="\n")
         writer.writeheader()
         for r in rows:
             messages = messages_from_tsv(r)
@@ -60,7 +60,7 @@ def main():
             correct = not error and (prediction["label"] == "unsafe") == bool(int(r["is_unsafe"]))
             record = {**meta, **{k: r[k] for k in ("row_id", "is_unsafe", "turns", "rule_id", "trigger", "clarity")},
                       **prediction, "correct": int(correct), "latency_ms": f"{ms:.3f}",
-                      "raw": raw, "error": error, "cost_usd": cost}
+                      "raw": raw, "raw_probability": backend.raw_probability if not error else "", "error": error, "cost_usd": cost}
             writer.writerow(record)
             out.flush()
             results.append(record)

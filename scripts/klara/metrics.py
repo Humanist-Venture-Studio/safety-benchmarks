@@ -33,6 +33,23 @@ def auc_interval(positive, negative):
     return f"{auc:.4f} [{max(0, auc-half):.4f}, {min(1, auc+half):.4f}]"
 
 
+def average_precision(valid):
+    buckets = defaultdict(lambda: [0, 0])
+    for r in valid:
+        buckets[float(r["unsafe_probability"])][int(r["is_unsafe"])] += 1
+    total = sum(v[1] for v in buckets.values())
+    if not total:
+        return "—"
+    seen = hits = 0
+    area = 0.
+    for score in sorted(buckets, reverse=True):
+        negatives, positives = buckets[score]
+        hits += positives
+        seen += negatives + positives
+        area += (positives / total) * (hits / seen)
+    return f"{area:.4f}"
+
+
 def metrics(rows):
     n = len(rows)
     unsafe = sum(int(r["is_unsafe"]) for r in rows)
@@ -45,6 +62,8 @@ def metrics(rows):
     return {"n": n, "accuracy": rate(correct, n), "FPR": rate(fp, n - unsafe),
             "missed/unsafe": f"{unsafe-tp}/{unsafe}", "recall": rate(tp, unsafe),
             "precision": rate(tp, tp + fp), "AUROC": auc_interval(*scores),
+            "PR-AUC (AP)": average_precision(valid),
+            "Brier": f"{mean((float(r['unsafe_probability'])-int(r['is_unsafe']))**2 for r in valid):.4f}" if valid else "—",
             "malformed": f"{n-len(valid)} ({rate(n-len(valid), n)})",
             "median ms": f"{median(elapsed):.2f}" if elapsed else "—"}
 
