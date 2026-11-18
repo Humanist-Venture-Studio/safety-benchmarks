@@ -104,6 +104,15 @@ def tei_score(data, labels):
     return softmax_unsafe(scores[labels[0]], scores[labels[1]]), json.dumps(data, separators=(",", ":"))
 
 
+def mezzo_score(data):
+    labels = {"sexual", "violence", "self-harm", "hate-speech", "toxic"}
+    require(isinstance(data, list) and len(data) == len(labels)
+            and {item["label"] for item in data} == labels, "expected all five native Mezzo logits")
+    logits = [item["score"] for item in data]
+    require(all(type(x) in (int, float) and math.isfinite(x) for x in logits), "invalid Mezzo logit")
+    return softmax_unsafe(0, max(logits)), json.dumps(data, separators=(",", ":"))
+
+
 def parse_cloud_spec(content):
     spec = json.loads(content)
     required = {"transcript", "questions", "unsafe_probability"}
@@ -252,7 +261,9 @@ class Backend:
             if self.name == "tei":
                 info = request_json(self.base + "/info", self.timeout)
                 require(info.get("model_id") == self.model, "TEI /info model_id differs from --model")
-                self.prompt = ""
+                self.tei_native = getattr(args, "native", None)
+                require(self.tei_native in (None, "mezzo"), "unsupported TEI aggregation")
+                self.prompt = "Mezzo: max of five independent sigmoid labels on transcript" if self.tei_native else ""
         self.prompt_hash = hashlib.sha256(self.prompt.encode()).hexdigest()
 
         self.calibration = None
@@ -289,7 +300,7 @@ class Backend:
             elif self.name == "tei":
                 reply = request_json(self.base + "/predict", self.timeout,
                                      {"inputs": text, "raw_scores": True, "truncate": False})
-                p, raw = tei_score(reply, self.labels)
+                p, raw = mezzo_score(reply) if self.tei_native else tei_score(reply, self.labels)
             elif self.name == "ollama":
                 reply = request_json(self.base + "/api/chat", self.timeout, {
                     "model": self.model, "messages": [{"role": "system", "content": self.prompt},

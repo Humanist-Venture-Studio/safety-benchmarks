@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+from types import MethodType
 
 import torch
 from backends import chat_prompt
@@ -45,10 +46,56 @@ def token_pair(tok):
     return ids, words
 
 
+@torch.no_grad()
+def q8_weights(weight):
+    """GGUF Q8_0 uses a half-precision scale and 32 signed codes per block."""
+    blocks = weight.float().reshape(-1, 32)
+    scale = blocks.abs().amax(1, keepdim=True) / 127
+    inverse = torch.where(scale > 0, scale.reciprocal(), 0)
+    scaled = blocks * inverse
+    magnitude = scaled.abs()
+    integral = magnitude.floor()
+    codes = torch.sign(scaled) * (integral + (2 * (magnitude - integral)).floor())
+    return (codes * scale.half().float()).reshape(weight.shape).to(weight.dtype)
+
+
+def enable_smol_q8(model):
+    """Simulate the deployed merged weights, keeping the two LoRA factors trainable."""
+    from torch.nn import functional as F
+    from peft.tuners.lora.layer import Linear
+
+    def projected(self, x):
+        base = self.get_base_layer()
+        merged = base.weight + self.get_delta_weight("default").to(base.weight.dtype)
+        # The straight-through gradient is the gradient of the merged projection.
+        effective = q8_weights(merged) + (merged - merged.detach())
+        return F.linear(x, effective, base.bias)
+
+    require(
+        model.config.model_type == "llama" and model.config.tie_word_embeddings,
+        "Spark Q8 training expects tied SmolLM2 embeddings",
+    )
+    require(
+        model.get_input_embeddings().weight is model.get_output_embeddings().weight,
+        "expected shared embedding and output weights",
+    )
+    embedding = model.get_input_embeddings().weight
+    with torch.no_grad():
+        embedding.copy_(q8_weights(embedding))
+    for layer in model.modules():
+        if isinstance(layer, Linear):
+            layer.forward = MethodType(projected, layer)
+
+
 def main():
     p = options(__doc__)
     p.set_defaults(batch=1, lr=2e-4)
     p.add_argument("--rank", type=int, default=8)
+    p.add_argument(
+        "--q8-aware",
+        action="store_true",
+        help="simulate Q8_0 on SmolLM2's merged projections and tied embedding during fitting",
+    )
     p.add_argument(
         "--verdict-smoothing",
         type=float,
@@ -113,6 +160,8 @@ def main():
         )
         model.enable_input_require_grads()
     model.to(a.device)
+    if a.q8_aware:
+        enable_smol_q8(model)
     verdict_ids = torch.tensor(ids, device=a.device)
 
     def forward(x, y):
@@ -133,6 +182,7 @@ def main():
                 if a.init_adapter
                 else None,
                 "tier": a.tier,
+                "q8_aware": a.q8_aware,
             },
             indent=2,
         )

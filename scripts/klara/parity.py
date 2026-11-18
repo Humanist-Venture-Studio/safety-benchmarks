@@ -71,7 +71,12 @@ def main():
                 {"inputs": text, "raw_scores": True, "truncate": False},
             )
             scores = {r["label"]: r["score"] for r in response}
-            actual.append([scores["safe"], scores["unsafe"]])
+            actual.append(
+                [
+                    scores[model.config.id2label[i]]
+                    for i in range(model.config.num_labels)
+                ]
+            )
         compare("tei", actual, a.tolerance)
     if a.browser:
         result = subprocess.run(

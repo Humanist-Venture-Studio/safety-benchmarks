@@ -38,6 +38,11 @@ def options(description):
     p.add_argument("--lr", type=float, default=3e-5)
     p.add_argument("--positive-weight", type=float, default=3)
     p.add_argument("--batch", type=int, default=4)
+    p.add_argument(
+        "--eval-batch",
+        type=int,
+        help="batch size for train-only evaluation and OOF inference",
+    )
     p.add_argument("--seed", type=int, default=20261117)
     p.add_argument("--max-length", type=int, default=2048)
     p.add_argument(
@@ -54,6 +59,17 @@ def options(description):
         help="extra occurrences of missed training rows",
     )
     p.add_argument("--device", choices=["cpu", "mps"], default="mps")
+    p.add_argument(
+        "--weak-rule-count",
+        type=int,
+        default=0,
+        help="also repeat the K positive rule groups with highest train OOF miss rate",
+    )
+    p.add_argument(
+        "--repeat-lookalikes",
+        action="store_true",
+        help="also repeat safe look-alikes if any was falsely flagged in train OOF",
+    )
     return p
 
 
@@ -67,6 +83,7 @@ def prepare(a):
     require(
         a.batch > 0
         and a.epochs > 0
+        and (a.eval_batch is None or a.eval_batch > 0)
         and a.positive_weight > 0
         and a.lr > 0
         and a.max_length > 0
@@ -218,7 +235,33 @@ def fit(model, tokenizer, encode, forward, rows, a):
 
     train, dev, held, folds = partition(rows, a)
     errors = missed_ids(a.oof, rows, folds, a)
+    require(
+        a.weak_rule_count >= 0
+        and (a.oof or not (a.weak_rule_count or a.repeat_lookalikes)),
+        "group resampling requires train-only OOF predictions",
+    )
+    rule_counts = defaultdict(list)
+    for row in train:
+        if row["is_unsafe"] == "1":
+            rule_counts[row["rule_id"]].append(row["row_id"] in errors)
+    weak = sorted(
+        (k for k, v in rule_counts.items() if any(v)),
+        key=lambda k: (-sum(rule_counts[k]) / len(rule_counts[k]), k),
+    )[: a.weak_rule_count]
+    weak_lookalikes = a.repeat_lookalikes and any(
+        r["row_id"] in errors and r.get("look_alike_of") for r in train
+    )
+    repeat = errors | {
+        r["row_id"]
+        for r in rows
+        if r["rule_id"] in weak or (weak_lookalikes and r.get("look_alike_of"))
+    }
     cache = {r["row_id"]: encode(transcript(r)) for r in rows}
+    eval_batch = a.eval_batch or a.batch
+    if a.eval_batch:
+        # A fixed evaluation order by token length reduces padding without changing fold membership.
+        dev.sort(key=lambda r: len(cache[r["row_id"]]))
+        held.sort(key=lambda r: len(cache[r["row_id"]]))
     require(
         all(0 < len(ids) <= a.max_length for ids in cache.values()),
         "input exceeds --max-length; increase it",
@@ -270,13 +313,15 @@ def fit(model, tokenizer, encode, forward, rows, a):
     # Time inference separately: held-fold predictions need no backward pass.
     # Use a separate RNG so measuring performance does not change the fit order.
     model.eval()
-    eval_pilot = random.Random(a.seed + 3).sample(train, min(len(train), 3 * a.batch))
+    eval_pilot = random.Random(a.seed + 3).sample(
+        train, min(len(train), 3 * eval_batch)
+    )
     with torch.no_grad():
         batch(pilot)[0][1].mean().item()  # warm up the evaluation kernels
         tick = time.monotonic()
         eval_pilot_tokens = 0
-        for i in range(0, len(eval_pilot), a.batch):
-            (_, losses), _, count = batch(eval_pilot[i : i + a.batch])
+        for i in range(0, len(eval_pilot), eval_batch):
+            (_, losses), _, count = batch(eval_pilot[i : i + eval_batch])
             losses.mean().item()  # synchronize, as the scoring path does
             eval_pilot_tokens += count
         eval_rate = eval_pilot_tokens / (time.monotonic() - tick)
@@ -284,7 +329,7 @@ def fit(model, tokenizer, encode, forward, rows, a):
     by_group = defaultdict(list)
     for row in train:
         by_group[row["scenario_id"]].extend(
-            [row] * (1 + a.extra_copies * (row["row_id"] in errors))
+            [row] * (1 + a.extra_copies * (row["row_id"] in repeat))
         )
     # Reserve time for early stopping and device variation. Choose whole groups.
     inference_budget_rate = 0.8 * eval_rate
@@ -313,6 +358,7 @@ def fit(model, tokenizer, encode, forward, rows, a):
     best, best_loss, best_epoch = None, math.inf, None
     seen, tokens, seconds, steps = 0, 0, 0.0, 0
     history = []
+    trained_ids = set()
     for epoch in range(a.epochs):
         model.train(not getattr(a, "probe", False))
         rng.shuffle(selected)
@@ -324,6 +370,7 @@ def fit(model, tokenizer, encode, forward, rows, a):
             group = selected[i : i + a.batch]
             tick = time.monotonic()
             tokens += step(group)
+            trained_ids.update(r["row_id"] for r in group)
             seconds += time.monotonic() - tick
             seen += len(group)
             epoch_seen += len(group)
@@ -333,10 +380,10 @@ def fit(model, tokenizer, encode, forward, rows, a):
         model.eval()
         losses = []
         with torch.no_grad():
-            for i in range(0, len(dev), a.batch):
+            for i in range(0, len(dev), eval_batch):
                 if time.monotonic() >= train_deadline:
                     break
-                (logits, _), y, _ = batch(dev[i : i + a.batch])
+                (logits, _), y, _ = batch(dev[i : i + eval_batch])
                 losses.extend(
                     F.cross_entropy(logits.float(), y, reduction="none").tolist()
                 )
@@ -388,9 +435,15 @@ def fit(model, tokenizer, encode, forward, rows, a):
         "epochs": history,
         "best_epoch": best_epoch,
         "oof_errors": len(errors),
+        "weak_rules": weak,
+        "repeat_lookalikes": bool(weak_lookalikes),
+        "unique_optimizer_rows": len(trained_ids),
         "arguments": {k: str(v) for k, v in vars(a).items() if not k.startswith("_")},
     }
     (a.out / "training.json").write_text(json.dumps(report, indent=2))
+    (a.out / "trained-row-ids.txt").write_text(
+        "".join(k + "\n" for k in sorted(trained_ids))
+    )
     print(json.dumps(report), flush=True)
     require(
         best_epoch is not None,
@@ -400,12 +453,12 @@ def fit(model, tokenizer, encode, forward, rows, a):
         model.eval()
         preds = {}
         with torch.no_grad():
-            for i in range(0, len(held), a.batch):
+            for i in range(0, len(held), eval_batch):
                 require(
                     time.monotonic() < deadline,
                     "OOF time box expired; fold remains incomplete",
                 )
-                group = held[i : i + a.batch]
+                group = held[i : i + eval_batch]
                 (logits, _), _, _ = batch(group)
                 preds.update(
                     zip(

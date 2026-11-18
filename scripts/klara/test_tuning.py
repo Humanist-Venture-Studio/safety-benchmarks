@@ -17,6 +17,87 @@ from verify_chat import compare_verdict, reference_key
 
 
 class GuardTuningChecks(unittest.TestCase):
+    def test_mezzo_native_tei_keeps_independent_sigmoids(self):
+        from math import exp
+        from backends import mezzo_score
+
+        logits = [
+            {"label": k, "score": 2}
+            for k in ("sexual", "violence", "self-harm", "hate-speech", "toxic")
+        ]
+        p, raw = mezzo_score(logits)
+        self.assertAlmostEqual(p, 1 / (1 + exp(-2)))
+        self.assertEqual(json.loads(raw), logits)
+        with self.assertRaises(ValueError):
+            mezzo_score(logits[:-1])
+
+    def test_browser_check_uses_the_calibrated_operating_point(self):
+        from browser_compare import differences
+
+        spec = dict(slope=1, intercept=1, threshold=0.7)
+        rows = [
+            dict(
+                row_id="one",
+                raw_probability=".5",
+                unsafe_probability=str(apply(0.5, spec)),
+                label="unsafe",
+                error="",
+            ),
+            dict(
+                row_id="two",
+                raw_probability="",
+                unsafe_probability="",
+                label="",
+                error="malformed",
+            ),
+        ]
+        measured = differences(rows, [[0, 0], [1, 0]], spec)
+        self.assertEqual(measured[0]["label_flip"], 0)
+        self.assertAlmostEqual(measured[0]["abs_calibrated"], 0)
+        self.assertEqual(measured[1]["label_flip"], "")
+        with self.assertRaises(ValueError):
+            differences(rows, [[0, 0]], spec)
+
+    def test_q8_aware_matches_converter_and_trains_lora(self):
+        try:
+            import torch
+            import gguf
+            from peft import get_peft_model, LoraConfig
+            from transformers import LlamaConfig, LlamaForCausalLM
+            from train_chat import enable_smol_q8, q8_weights
+        except ImportError:
+            self.skipTest("requires tuning environment")
+        torch.manual_seed(7)
+        values = torch.randn(3, 32)
+        values[0] = 0
+        typ = gguf.GGMLQuantizationType.Q8_0
+        reference = gguf.dequantize(gguf.quantize(values.numpy(), typ), typ)
+        torch.testing.assert_close(
+            q8_weights(values), torch.from_numpy(reference), rtol=0, atol=0
+        )
+        tiny = LlamaForCausalLM(
+            LlamaConfig(
+                hidden_size=32,
+                intermediate_size=64,
+                num_hidden_layers=1,
+                num_attention_heads=2,
+                num_key_value_heads=2,
+                vocab_size=64,
+                tie_word_embeddings=True,
+            )
+        )
+        model = get_peft_model(
+            tiny, LoraConfig(r=2, lora_alpha=4, target_modules=["q_proj", "v_proj"])
+        )
+        enable_smol_q8(model)
+        model(torch.tensor([[1, 2, 3]])).logits.mean().backward()
+        self.assertTrue(
+            any(
+                "lora_B" in k and p.grad is not None and p.grad.abs().sum() > 0
+                for k, p in model.named_parameters()
+            )
+        )
+
     def test_fixture_reproduces_measured_rows(self):
         output = io.StringIO(newline="")
         write_fixture(output)
