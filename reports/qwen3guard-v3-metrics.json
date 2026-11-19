@@ -1,0 +1,1029 @@
+{
+  "test": {
+    "base": {
+      "single": {
+        "rows": 624,
+        "exact": 532,
+        "binary": 532,
+        "false_safe": 57,
+        "false_flag": 35,
+        "unsafe_called_safe": 0,
+        "table": {
+          "1->safe": 277,
+          "0->controversial": 163,
+          "0->unsafe": 92,
+          "1->controversial": 34,
+          "0->safe": 57,
+          "1->unsafe": 1
+        },
+        "outputs": {
+          "safe": 334,
+          "controversial": 197,
+          "unsafe": 93
+        },
+        "errors": {},
+        "trigger": {}
+      },
+      "multi": {
+        "rows": 2503,
+        "exact": 1580,
+        "binary": 1847,
+        "false_safe": 358,
+        "false_flag": 298,
+        "unsafe_called_safe": 108,
+        "table": {
+          "SAFE->safe": 1272,
+          "SAFE->controversial": 292,
+          "FLAGGED->safe": 250,
+          "UNSAFE->safe": 108,
+          "FLAGGED->controversial": 260,
+          "UNSAFE->controversial": 265,
+          "UNSAFE->unsafe": 48,
+          "FLAGGED->unsafe": 2,
+          "SAFE->unsafe": 6
+        },
+        "outputs": {
+          "safe": 1630,
+          "controversial": 817,
+          "unsafe": 56
+        },
+        "errors": {},
+        "trigger": {
+          "none": {
+            "rows": 2057,
+            "exact": 1524,
+            "binary": 1528,
+            "UNSAFE_rows": 3,
+            "UNSAFE_called_safe": 1,
+            "SAFE_rows": 1570,
+            "SAFE_flagged": 298
+          },
+          "student": {
+            "rows": 212,
+            "exact": 14,
+            "binary": 138,
+            "UNSAFE_rows": 184,
+            "UNSAFE_called_safe": 54,
+            "SAFE_rows": 0,
+            "SAFE_flagged": 0
+          },
+          "assistant": {
+            "rows": 234,
+            "exact": 42,
+            "binary": 181,
+            "UNSAFE_rows": 234,
+            "UNSAFE_called_safe": 53,
+            "SAFE_rows": 0,
+            "SAFE_flagged": 0
+          }
+        }
+      }
+    },
+    "v2": {
+      "single": {
+        "rows": 624,
+        "exact": 545,
+        "binary": 545,
+        "false_safe": 67,
+        "false_flag": 12,
+        "unsafe_called_safe": 0,
+        "table": {
+          "1->safe": 300,
+          "0->unsafe": 232,
+          "0->safe": 67,
+          "1->unsafe": 10,
+          "0->controversial": 13,
+          "1->controversial": 2
+        },
+        "outputs": {
+          "safe": 367,
+          "unsafe": 242,
+          "controversial": 15
+        },
+        "errors": {},
+        "trigger": {}
+      },
+      "multi": {
+        "rows": 2503,
+        "exact": 1777,
+        "binary": 1839,
+        "false_safe": 527,
+        "false_flag": 137,
+        "unsafe_called_safe": 165,
+        "table": {
+          "SAFE->safe": 1433,
+          "SAFE->controversial": 107,
+          "FLAGGED->safe": 362,
+          "UNSAFE->safe": 165,
+          "FLAGGED->controversial": 116,
+          "UNSAFE->unsafe": 228,
+          "UNSAFE->controversial": 28,
+          "FLAGGED->unsafe": 34,
+          "SAFE->unsafe": 30
+        },
+        "outputs": {
+          "safe": 1960,
+          "controversial": 251,
+          "unsafe": 292
+        },
+        "errors": {},
+        "trigger": {
+          "none": {
+            "rows": 2057,
+            "exact": 1546,
+            "binary": 1580,
+            "UNSAFE_rows": 3,
+            "UNSAFE_called_safe": 2,
+            "SAFE_rows": 1570,
+            "SAFE_flagged": 137
+          },
+          "student": {
+            "rows": 212,
+            "exact": 73,
+            "binary": 88,
+            "UNSAFE_rows": 184,
+            "UNSAFE_called_safe": 100,
+            "SAFE_rows": 0,
+            "SAFE_flagged": 0
+          },
+          "assistant": {
+            "rows": 234,
+            "exact": 158,
+            "binary": 171,
+            "UNSAFE_rows": 234,
+            "UNSAFE_called_safe": 63,
+            "SAFE_rows": 0,
+            "SAFE_flagged": 0
+          }
+        }
+      }
+    },
+    "single": {
+      "single": {
+        "rows": 624,
+        "exact": 492,
+        "binary": 492,
+        "false_safe": 132,
+        "false_flag": 0,
+        "unsafe_called_safe": 0,
+        "table": {
+          "1->safe": 312,
+          "0->controversial": 132,
+          "0->safe": 132,
+          "0->unsafe": 48
+        },
+        "outputs": {
+          "safe": 444,
+          "controversial": 132,
+          "unsafe": 48
+        },
+        "errors": {},
+        "trigger": {}
+      },
+      "multi": {
+        "rows": 2503,
+        "exact": 1577,
+        "binary": 1577,
+        "false_safe": 925,
+        "false_flag": 1,
+        "unsafe_called_safe": 413,
+        "table": {
+          "SAFE->safe": 1569,
+          "FLAGGED->safe": 512,
+          "UNSAFE->safe": 413,
+          "UNSAFE->unsafe": 8,
+          "SAFE->controversial": 1
+        },
+        "outputs": {
+          "safe": 2494,
+          "unsafe": 8,
+          "controversial": 1
+        },
+        "errors": {},
+        "trigger": {
+          "none": {
+            "rows": 2057,
+            "exact": 1569,
+            "binary": 1569,
+            "UNSAFE_rows": 3,
+            "UNSAFE_called_safe": 3,
+            "SAFE_rows": 1570,
+            "SAFE_flagged": 1
+          },
+          "student": {
+            "rows": 212,
+            "exact": 0,
+            "binary": 0,
+            "UNSAFE_rows": 184,
+            "UNSAFE_called_safe": 184,
+            "SAFE_rows": 0,
+            "SAFE_flagged": 0
+          },
+          "assistant": {
+            "rows": 234,
+            "exact": 8,
+            "binary": 8,
+            "UNSAFE_rows": 234,
+            "UNSAFE_called_safe": 226,
+            "SAFE_rows": 0,
+            "SAFE_flagged": 0
+          }
+        }
+      }
+    },
+    "candidate": {
+      "single": {
+        "rows": 624,
+        "exact": 604,
+        "binary": 604,
+        "false_safe": 14,
+        "false_flag": 6,
+        "unsafe_called_safe": 0,
+        "table": {
+          "1->safe": 306,
+          "0->unsafe": 295,
+          "1->unsafe": 6,
+          "0->safe": 14,
+          "0->controversial": 3
+        },
+        "outputs": {
+          "safe": 320,
+          "unsafe": 301,
+          "controversial": 3
+        },
+        "errors": {},
+        "trigger": {}
+      },
+      "multi": {
+        "rows": 2503,
+        "exact": 1957,
+        "binary": 2020,
+        "false_safe": 336,
+        "false_flag": 147,
+        "unsafe_called_safe": 42,
+        "table": {
+          "SAFE->safe": 1423,
+          "SAFE->controversial": 118,
+          "FLAGGED->controversial": 171,
+          "UNSAFE->unsafe": 363,
+          "FLAGGED->safe": 294,
+          "FLAGGED->unsafe": 47,
+          "SAFE->unsafe": 29,
+          "UNSAFE->safe": 42,
+          "UNSAFE->controversial": 16
+        },
+        "outputs": {
+          "safe": 1759,
+          "controversial": 305,
+          "unsafe": 439
+        },
+        "errors": {},
+        "trigger": {
+          "none": {
+            "rows": 2057,
+            "exact": 1589,
+            "binary": 1628,
+            "UNSAFE_rows": 3,
+            "UNSAFE_called_safe": 3,
+            "SAFE_rows": 1570,
+            "SAFE_flagged": 147
+          },
+          "student": {
+            "rows": 212,
+            "exact": 163,
+            "binary": 179,
+            "UNSAFE_rows": 184,
+            "UNSAFE_called_safe": 18,
+            "SAFE_rows": 0,
+            "SAFE_flagged": 0
+          },
+          "assistant": {
+            "rows": 234,
+            "exact": 205,
+            "binary": 213,
+            "UNSAFE_rows": 234,
+            "UNSAFE_called_safe": 21,
+            "SAFE_rows": 0,
+            "SAFE_flagged": 0
+          }
+        }
+      }
+    }
+  },
+  "validation": {
+    "base": {
+      "single": {
+        "rows": 462,
+        "exact": 391,
+        "binary": 391,
+        "false_safe": 44,
+        "false_flag": 27,
+        "unsafe_called_safe": 0,
+        "table": {
+          "1->safe": 204,
+          "0->unsafe": 49,
+          "0->controversial": 138,
+          "0->safe": 44,
+          "1->controversial": 26,
+          "1->unsafe": 1
+        },
+        "outputs": {
+          "safe": 248,
+          "unsafe": 50,
+          "controversial": 164
+        },
+        "errors": {},
+        "trigger": {}
+      },
+      "multi": {
+        "rows": 1000,
+        "exact": 663,
+        "binary": 766,
+        "false_safe": 168,
+        "false_flag": 66,
+        "unsafe_called_safe": 54,
+        "table": {
+          "UNSAFE->controversial": 79,
+          "SAFE->safe": 623,
+          "SAFE->controversial": 48,
+          "FLAGGED->safe": 114,
+          "FLAGGED->controversial": 34,
+          "UNSAFE->safe": 54,
+          "UNSAFE->unsafe": 6,
+          "SAFE->unsafe": 18,
+          "FLAGGED->unsafe": 24
+        },
+        "outputs": {
+          "controversial": 161,
+          "safe": 791,
+          "unsafe": 48
+        },
+        "errors": {},
+        "trigger": {
+          "student": {
+            "rows": 66,
+            "exact": 8,
+            "binary": 44,
+            "UNSAFE_rows": 63,
+            "UNSAFE_called_safe": 21,
+            "SAFE_rows": 0,
+            "SAFE_flagged": 0
+          },
+          "none": {
+            "rows": 862,
+            "exact": 655,
+            "binary": 683,
+            "UNSAFE_rows": 4,
+            "UNSAFE_called_safe": 0,
+            "SAFE_rows": 689,
+            "SAFE_flagged": 66
+          },
+          "assistant": {
+            "rows": 72,
+            "exact": 0,
+            "binary": 39,
+            "UNSAFE_rows": 72,
+            "UNSAFE_called_safe": 33,
+            "SAFE_rows": 0,
+            "SAFE_flagged": 0
+          }
+        }
+      }
+    },
+    "v2": {
+      "single": {
+        "rows": 462,
+        "exact": 416,
+        "binary": 416,
+        "false_safe": 38,
+        "false_flag": 8,
+        "unsafe_called_safe": 0,
+        "table": {
+          "1->safe": 223,
+          "0->unsafe": 184,
+          "1->unsafe": 8,
+          "0->safe": 38,
+          "0->controversial": 9
+        },
+        "outputs": {
+          "safe": 261,
+          "unsafe": 192,
+          "controversial": 9
+        },
+        "errors": {},
+        "trigger": {}
+      },
+      "multi": {
+        "rows": 1000,
+        "exact": 761,
+        "binary": 774,
+        "false_safe": 203,
+        "false_flag": 23,
+        "unsafe_called_safe": 55,
+        "table": {
+          "UNSAFE->unsafe": 75,
+          "SAFE->safe": 666,
+          "FLAGGED->safe": 148,
+          "UNSAFE->safe": 55,
+          "SAFE->controversial": 15,
+          "FLAGGED->controversial": 20,
+          "FLAGGED->unsafe": 4,
+          "SAFE->unsafe": 8,
+          "UNSAFE->controversial": 9
+        },
+        "outputs": {
+          "unsafe": 87,
+          "safe": 869,
+          "controversial": 44
+        },
+        "errors": {},
+        "trigger": {
+          "student": {
+            "rows": 66,
+            "exact": 36,
+            "binary": 44,
+            "UNSAFE_rows": 63,
+            "UNSAFE_called_safe": 21,
+            "SAFE_rows": 0,
+            "SAFE_flagged": 0
+          },
+          "none": {
+            "rows": 862,
+            "exact": 686,
+            "binary": 688,
+            "UNSAFE_rows": 4,
+            "UNSAFE_called_safe": 4,
+            "SAFE_rows": 689,
+            "SAFE_flagged": 23
+          },
+          "assistant": {
+            "rows": 72,
+            "exact": 39,
+            "binary": 42,
+            "UNSAFE_rows": 72,
+            "UNSAFE_called_safe": 30,
+            "SAFE_rows": 0,
+            "SAFE_flagged": 0
+          }
+        }
+      }
+    },
+    "single": {
+      "single": {
+        "rows": 462,
+        "exact": 372,
+        "binary": 372,
+        "false_safe": 88,
+        "false_flag": 2,
+        "unsafe_called_safe": 0,
+        "table": {
+          "1->safe": 229,
+          "0->controversial": 114,
+          "0->safe": 88,
+          "0->unsafe": 29,
+          "1->controversial": 2
+        },
+        "outputs": {
+          "safe": 317,
+          "controversial": 116,
+          "unsafe": 29
+        },
+        "errors": {},
+        "trigger": {}
+      },
+      "multi": {
+        "rows": 1000,
+        "exact": 689,
+        "binary": 689,
+        "false_safe": 311,
+        "false_flag": 0,
+        "unsafe_called_safe": 139,
+        "table": {
+          "UNSAFE->safe": 139,
+          "SAFE->safe": 689,
+          "FLAGGED->safe": 172
+        },
+        "outputs": {
+          "safe": 1000
+        },
+        "errors": {},
+        "trigger": {
+          "student": {
+            "rows": 66,
+            "exact": 0,
+            "binary": 0,
+            "UNSAFE_rows": 63,
+            "UNSAFE_called_safe": 63,
+            "SAFE_rows": 0,
+            "SAFE_flagged": 0
+          },
+          "none": {
+            "rows": 862,
+            "exact": 689,
+            "binary": 689,
+            "UNSAFE_rows": 4,
+            "UNSAFE_called_safe": 4,
+            "SAFE_rows": 689,
+            "SAFE_flagged": 0
+          },
+          "assistant": {
+            "rows": 72,
+            "exact": 0,
+            "binary": 0,
+            "UNSAFE_rows": 72,
+            "UNSAFE_called_safe": 72,
+            "SAFE_rows": 0,
+            "SAFE_flagged": 0
+          }
+        }
+      }
+    },
+    "head": {
+      "single": {
+        "rows": 462,
+        "exact": 432,
+        "binary": 432,
+        "false_safe": 12,
+        "false_flag": 18,
+        "unsafe_called_safe": 0,
+        "table": {
+          "1->safe": 213,
+          "0->unsafe": 215,
+          "1->unsafe": 18,
+          "0->safe": 12,
+          "0->controversial": 4
+        },
+        "outputs": {
+          "safe": 225,
+          "unsafe": 233,
+          "controversial": 4
+        },
+        "errors": {},
+        "trigger": {}
+      },
+      "multi": {
+        "rows": 1000,
+        "exact": 812,
+        "binary": 822,
+        "false_safe": 153,
+        "false_flag": 25,
+        "unsafe_called_safe": 16,
+        "table": {
+          "UNSAFE->unsafe": 116,
+          "SAFE->safe": 664,
+          "FLAGGED->safe": 137,
+          "SAFE->controversial": 20,
+          "SAFE->unsafe": 5,
+          "FLAGGED->controversial": 32,
+          "FLAGGED->unsafe": 3,
+          "UNSAFE->safe": 16,
+          "UNSAFE->controversial": 7
+        },
+        "outputs": {
+          "unsafe": 124,
+          "safe": 817,
+          "controversial": 59
+        },
+        "errors": {},
+        "trigger": {
+          "student": {
+            "rows": 66,
+            "exact": 52,
+            "binary": 60,
+            "UNSAFE_rows": 63,
+            "UNSAFE_called_safe": 6,
+            "SAFE_rows": 0,
+            "SAFE_flagged": 0
+          },
+          "none": {
+            "rows": 862,
+            "exact": 697,
+            "binary": 697,
+            "UNSAFE_rows": 4,
+            "UNSAFE_called_safe": 3,
+            "SAFE_rows": 689,
+            "SAFE_flagged": 25
+          },
+          "assistant": {
+            "rows": 72,
+            "exact": 63,
+            "binary": 65,
+            "UNSAFE_rows": 72,
+            "UNSAFE_called_safe": 7,
+            "SAFE_rows": 0,
+            "SAFE_flagged": 0
+          }
+        }
+      }
+    },
+    "head-converged": {
+      "single": {
+        "rows": 462,
+        "exact": 437,
+        "binary": 437,
+        "false_safe": 9,
+        "false_flag": 16,
+        "unsafe_called_safe": 0,
+        "table": {
+          "1->safe": 215,
+          "0->controversial": 218,
+          "1->controversial": 15,
+          "0->safe": 9,
+          "0->unsafe": 4,
+          "1->unsafe": 1
+        },
+        "outputs": {
+          "safe": 224,
+          "controversial": 233,
+          "unsafe": 5
+        },
+        "errors": {},
+        "trigger": {}
+      },
+      "multi": {
+        "rows": 1000,
+        "exact": 804,
+        "binary": 817,
+        "false_safe": 161,
+        "false_flag": 22,
+        "unsafe_called_safe": 13,
+        "table": {
+          "UNSAFE->unsafe": 120,
+          "SAFE->safe": 667,
+          "FLAGGED->safe": 148,
+          "SAFE->unsafe": 10,
+          "FLAGGED->controversial": 17,
+          "SAFE->controversial": 12,
+          "FLAGGED->unsafe": 7,
+          "UNSAFE->safe": 13,
+          "UNSAFE->controversial": 6
+        },
+        "outputs": {
+          "unsafe": 137,
+          "safe": 828,
+          "controversial": 35
+        },
+        "errors": {},
+        "trigger": {
+          "student": {
+            "rows": 66,
+            "exact": 54,
+            "binary": 60,
+            "UNSAFE_rows": 63,
+            "UNSAFE_called_safe": 6,
+            "SAFE_rows": 0,
+            "SAFE_flagged": 0
+          },
+          "none": {
+            "rows": 862,
+            "exact": 686,
+            "binary": 690,
+            "UNSAFE_rows": 4,
+            "UNSAFE_called_safe": 2,
+            "SAFE_rows": 689,
+            "SAFE_flagged": 22
+          },
+          "assistant": {
+            "rows": 72,
+            "exact": 64,
+            "binary": 67,
+            "UNSAFE_rows": 72,
+            "UNSAFE_called_safe": 5,
+            "SAFE_rows": 0,
+            "SAFE_flagged": 0
+          }
+        }
+      }
+    },
+    "qat1": {
+      "single": {
+        "rows": 462,
+        "exact": 444,
+        "binary": 444,
+        "false_safe": 5,
+        "false_flag": 13,
+        "unsafe_called_safe": 0,
+        "table": {
+          "1->safe": 218,
+          "0->unsafe": 223,
+          "1->unsafe": 11,
+          "0->safe": 5,
+          "1->controversial": 2,
+          "0->controversial": 3
+        },
+        "outputs": {
+          "safe": 223,
+          "unsafe": 234,
+          "controversial": 5
+        },
+        "errors": {},
+        "trigger": {}
+      },
+      "multi": {
+        "rows": 1000,
+        "exact": 810,
+        "binary": 832,
+        "false_safe": 131,
+        "false_flag": 37,
+        "unsafe_called_safe": 11,
+        "table": {
+          "UNSAFE->unsafe": 123,
+          "SAFE->safe": 652,
+          "FLAGGED->safe": 120,
+          "UNSAFE->safe": 11,
+          "SAFE->controversial": 35,
+          "FLAGGED->controversial": 35,
+          "FLAGGED->unsafe": 17,
+          "UNSAFE->controversial": 5,
+          "SAFE->unsafe": 2
+        },
+        "outputs": {
+          "unsafe": 142,
+          "safe": 783,
+          "controversial": 75
+        },
+        "errors": {},
+        "trigger": {
+          "student": {
+            "rows": 66,
+            "exact": 51,
+            "binary": 59,
+            "UNSAFE_rows": 63,
+            "UNSAFE_called_safe": 7,
+            "SAFE_rows": 0,
+            "SAFE_flagged": 0
+          },
+          "none": {
+            "rows": 862,
+            "exact": 687,
+            "binary": 701,
+            "UNSAFE_rows": 4,
+            "UNSAFE_called_safe": 4,
+            "SAFE_rows": 689,
+            "SAFE_flagged": 37
+          },
+          "assistant": {
+            "rows": 72,
+            "exact": 72,
+            "binary": 72,
+            "UNSAFE_rows": 72,
+            "UNSAFE_called_safe": 0,
+            "SAFE_rows": 0,
+            "SAFE_flagged": 0
+          }
+        }
+      }
+    },
+    "qat1-calibrated": {
+      "single": {
+        "rows": 462,
+        "exact": 443,
+        "binary": 443,
+        "false_safe": 4,
+        "false_flag": 15,
+        "unsafe_called_safe": 0,
+        "table": {
+          "1->safe": 216,
+          "0->unsafe": 224,
+          "1->unsafe": 13,
+          "0->safe": 4,
+          "1->controversial": 2,
+          "0->controversial": 3
+        },
+        "outputs": {
+          "safe": 220,
+          "unsafe": 237,
+          "controversial": 5
+        },
+        "errors": {},
+        "trigger": {}
+      },
+      "multi": {
+        "rows": 1000,
+        "exact": 812,
+        "binary": 833,
+        "false_safe": 134,
+        "false_flag": 33,
+        "unsafe_called_safe": 10,
+        "table": {
+          "UNSAFE->unsafe": 125,
+          "SAFE->safe": 656,
+          "FLAGGED->safe": 124,
+          "SAFE->controversial": 31,
+          "UNSAFE->safe": 10,
+          "FLAGGED->controversial": 31,
+          "FLAGGED->unsafe": 17,
+          "UNSAFE->controversial": 4,
+          "SAFE->unsafe": 2
+        },
+        "outputs": {
+          "unsafe": 144,
+          "safe": 790,
+          "controversial": 66
+        },
+        "errors": {},
+        "trigger": {
+          "student": {
+            "rows": 66,
+            "exact": 53,
+            "binary": 60,
+            "UNSAFE_rows": 63,
+            "UNSAFE_called_safe": 6,
+            "SAFE_rows": 0,
+            "SAFE_flagged": 0
+          },
+          "none": {
+            "rows": 862,
+            "exact": 687,
+            "binary": 701,
+            "UNSAFE_rows": 4,
+            "UNSAFE_called_safe": 4,
+            "SAFE_rows": 689,
+            "SAFE_flagged": 33
+          },
+          "assistant": {
+            "rows": 72,
+            "exact": 72,
+            "binary": 72,
+            "UNSAFE_rows": 72,
+            "UNSAFE_called_safe": 0,
+            "SAFE_rows": 0,
+            "SAFE_flagged": 0
+          }
+        }
+      }
+    },
+    "qat1-calibrated-converged": {
+      "single": {
+        "rows": 462,
+        "exact": 443,
+        "binary": 443,
+        "false_safe": 4,
+        "false_flag": 15,
+        "unsafe_called_safe": 0,
+        "table": {
+          "1->safe": 216,
+          "0->unsafe": 225,
+          "1->unsafe": 13,
+          "0->safe": 4,
+          "1->controversial": 2,
+          "0->controversial": 2
+        },
+        "outputs": {
+          "safe": 220,
+          "unsafe": 238,
+          "controversial": 4
+        },
+        "errors": {},
+        "trigger": {}
+      },
+      "multi": {
+        "rows": 1000,
+        "exact": 818,
+        "binary": 840,
+        "false_safe": 135,
+        "false_flag": 25,
+        "unsafe_called_safe": 10,
+        "table": {
+          "UNSAFE->unsafe": 124,
+          "SAFE->safe": 664,
+          "FLAGGED->safe": 125,
+          "SAFE->controversial": 23,
+          "UNSAFE->safe": 10,
+          "FLAGGED->controversial": 30,
+          "FLAGGED->unsafe": 17,
+          "UNSAFE->controversial": 5,
+          "SAFE->unsafe": 2
+        },
+        "outputs": {
+          "unsafe": 143,
+          "safe": 799,
+          "controversial": 58
+        },
+        "errors": {},
+        "trigger": {
+          "student": {
+            "rows": 66,
+            "exact": 52,
+            "binary": 60,
+            "UNSAFE_rows": 63,
+            "UNSAFE_called_safe": 6,
+            "SAFE_rows": 0,
+            "SAFE_flagged": 0
+          },
+          "none": {
+            "rows": 862,
+            "exact": 694,
+            "binary": 708,
+            "UNSAFE_rows": 4,
+            "UNSAFE_called_safe": 4,
+            "SAFE_rows": 689,
+            "SAFE_flagged": 25
+          },
+          "assistant": {
+            "rows": 72,
+            "exact": 72,
+            "binary": 72,
+            "UNSAFE_rows": 72,
+            "UNSAFE_called_safe": 0,
+            "SAFE_rows": 0,
+            "SAFE_flagged": 0
+          }
+        }
+      }
+    },
+    "qat2": {
+      "single": {
+        "rows": 462,
+        "exact": 446,
+        "binary": 446,
+        "false_safe": 4,
+        "false_flag": 12,
+        "unsafe_called_safe": 0,
+        "table": {
+          "1->safe": 219,
+          "0->unsafe": 224,
+          "1->unsafe": 10,
+          "0->safe": 4,
+          "1->controversial": 2,
+          "0->controversial": 3
+        },
+        "outputs": {
+          "safe": 223,
+          "unsafe": 234,
+          "controversial": 5
+        },
+        "errors": {},
+        "trigger": {}
+      },
+      "multi": {
+        "rows": 1000,
+        "exact": 819,
+        "binary": 841,
+        "false_safe": 141,
+        "false_flag": 18,
+        "unsafe_called_safe": 10,
+        "table": {
+          "UNSAFE->unsafe": 124,
+          "SAFE->safe": 671,
+          "FLAGGED->safe": 131,
+          "UNSAFE->safe": 10,
+          "SAFE->controversial": 16,
+          "FLAGGED->controversial": 24,
+          "FLAGGED->unsafe": 17,
+          "UNSAFE->controversial": 5,
+          "SAFE->unsafe": 2
+        },
+        "outputs": {
+          "unsafe": 143,
+          "safe": 812,
+          "controversial": 45
+        },
+        "errors": {},
+        "trigger": {
+          "student": {
+            "rows": 66,
+            "exact": 52,
+            "binary": 60,
+            "UNSAFE_rows": 63,
+            "UNSAFE_called_safe": 6,
+            "SAFE_rows": 0,
+            "SAFE_flagged": 0
+          },
+          "none": {
+            "rows": 862,
+            "exact": 695,
+            "binary": 709,
+            "UNSAFE_rows": 4,
+            "UNSAFE_called_safe": 4,
+            "SAFE_rows": 689,
+            "SAFE_flagged": 18
+          },
+          "assistant": {
+            "rows": 72,
+            "exact": 72,
+            "binary": 72,
+            "UNSAFE_rows": 72,
+            "UNSAFE_called_safe": 0,
+            "SAFE_rows": 0,
+            "SAFE_flagged": 0
+          }
+        }
+      }
+    }
+  },
+  "frozen_utc": "2026-11-12T02:12:20Z",
+  "gguf_sha256": "a644794919068fad05a29e1db9228a6fe5c891ea12466a182325d68505e3136b",
+  "data": {
+    "data.tsv": "3cfa5780d06145c4b0bf86c63431568b13da8f7ca9a9dba203f5cecca9cc686e",
+    "data-multi.tsv": "ca9c8022d7aea03beeddbc9d1b9ffac38877f97c3039e8c556c1891a2edefc7e",
+    "data-multi-template-split.tsv": "5b45aed4ef5bbdcbeb34f69c775ea2fa8ebaca7482d1e089e9198f141ad7e0e3"
+  },
+  "settings": {
+    "temperature": 0,
+    "seed": 0,
+    "num_predict": 48,
+    "num_ctx": 2048
+  },
+  "tag": "humanist/qwen3guard:0.6b-v3-racoon-20261111-experimental"
+}

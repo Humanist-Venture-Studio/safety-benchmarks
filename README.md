@@ -91,6 +91,18 @@ Each results TSV contains the input rows, split, first-attempt classification an
 
 In the earlier Humanist experiment, tuning 45 tensors raised held-out accuracy from **504/624 (80.77%)** to **608/624 (97.44%)**. That experiment also tuned transformer layers. Use the TSVs from your run for the verdict-layer recipe above.
 
+## Humanist v3: explicit assessment scope
+
+The [v3 experiment report](reports/qwen3guard-v3-racoon.md) records a mixed-data, low-rank, quantization-aware run and its local model tag. Its two targets are different: `data.tsv` judges the final assistant reply in context; `data-multi.tsv` judges risk anywhere in the conversation. A safe refusal can pass the first task while the student's request still triggers the second.
+
+The v3 export remains **experimental**. It scores 604/624 single-turn and 1,957/2,503 exact multi labels, but misses its validation ceiling for clear unsafe conversations. Against historical native-prompt v2, it reduces multi false alarms from 297 to 147 while increasing clear-unsafe misses from 33 to 42. The report separates those different-prompt figures from the controlled same-contract comparison.
+
+V3 uses one `Student:` / `Assistant:` serialization and an explicit `reply` or `conversation` assessment instruction. The caller supplies that intent, independently of chat length. The benchmark validates one-turn reply assessment and four-turn conversation assessment; it does not establish accuracy for the other scope/length combinations. Labels, categories, IDs and split names are never model inputs.
+
+The recipe is in `.agents/skills/tune-qwen-guard/scripts/`: `prepare_v3.py` verifies the existing splits and prepares only training/validation features, `head_v3.py` fits the mixed verdict baseline, and `train_v3.py` trains quantization-aware adapters. `refeature_v3.py` supports train-only verdict recalibration after a deeper fit. `evaluate_v3.py` retains first-attempt Ollama CLI responses, and `freeze_v3.py` freezes the chosen model and evaluation contract before test. `audit_v3.py` checks saved results, tensor boundaries and preservation of existing tags. Exact commands, configuration, selection history and limitations are in the report.
+
+Both the Modelfile and native GGUF chat template must match [template-scoped.txt](.agents/skills/tune-qwen-guard/template-scoped.txt). On the installed Ollama 0.40.16 runtime, changing only the Modelfile template did not change normal generation. `v3_export.py` patches a copy's native template metadata without moving tensor offsets; token parity is checked against actual generation. Temperature 0, seed 0, a 2,048-token context and a 48-token output limit are baked into each comparison tag. Model binaries and training caches stay outside Git.
+
 ## Repository Contents
 
 - `data.tsv` — Benchmark dataset containing prompts (`request`), paired safe and unsafe replies (`simulated_response`), categories, languages, and binary safety labels (`is_safe`).
