@@ -87,8 +87,29 @@ def report(tier):
     for dest in (RESULTS / "tables.md", tables):
         with atomic_text(dest) as out:
             out.write(content)
+    checks = []
     for model in LICENSE:
         invoke("spark_report.py", "--out", target / "diagnostics", "--diagnose", model)
+        for stage in ("baseline", "r1", "r2"):
+            path = LOGS / f"{model}-{stage}-verify.log"
+            if not path.exists():
+                require(stage == "baseline" and model not in ("mezzo", "ettin"),
+                        f"missing verification for {model} {stage}")
+                checks.append(dict(model=model, stage=stage, observations=1,
+                                   check="native prompt token count on GGUF registration", max_absolute_delta=0))
+                continue
+            records = [json.loads(s) for s in path.read_text().splitlines() if s.startswith("{")]
+            if model in ("mezzo", "ettin"):
+                record = records[-1]
+                require(record["count"] == 5, "expected five TEI fixture lengths")
+                kind, worst = "FP16 TEI versus PyTorch logits", record["max_abs_error"]
+            else:
+                records = records[-5:]
+                require(len({r["turns"] for r in records}) == 5, "expected five verified Ollama lengths")
+                kind, worst = "HF/GGUF IDs, served length and verdict logit margin", max(r["delta"] for r in records)
+            checks.append(dict(model=model, stage=stage, observations=5, check=kind, max_absolute_delta=worst))
+    from spark_report import write
+    write(target / "serving-parity.tsv", checks)
     if tier != "spark":
         return
     browser = target / "browser"
