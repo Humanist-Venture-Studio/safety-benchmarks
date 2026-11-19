@@ -176,6 +176,36 @@ def calibrate_pass(name):
     validate_run(list(read_tsv(dest)))
 
 
+def baseline_tokens(folder, tag):
+    """Freeze a native spelling from synthetic rows before the first benchmark request."""
+    from collections import Counter
+    from backends import CHAT_PROMPT, request_json
+    from verify_chat import probe_inputs
+
+    dest = folder / "baseline-tokens.json"
+    if dest.exists():
+        return json.loads(dest.read_bytes())["pair"]
+    pairs = Counter()
+    for sample in probe_inputs(FIXTURE).values():
+        reply = request_json(OLLAMA + "/api/chat", 120, {
+            "model": tag, "messages": [{"role": "system", "content": CHAT_PROMPT},
+                                      {"role": "user", "content": sample}],
+            "stream": False, "think": False, "logprobs": True, "top_logprobs": 20,
+            "options": {"temperature": 0, "num_predict": 1}})
+        first = reply["logprobs"][0]
+        emitted = first["token"]
+        available = {item["token"] for item in first["top_logprobs"]} | {emitted}
+        for prefix in ("", " "):
+            for safe, unsafe in (("safe", "unsafe"), ("Safe", "Unsafe"), ("SAFE", "UNSAFE")):
+                pair = (prefix + safe, prefix + unsafe)
+                if emitted in pair and set(pair) <= available:
+                    pairs[pair] += 1
+    pair = sorted(pairs, key=lambda k: (-pairs[k], k))[0] if pairs else ("safe", "unsafe")
+    with atomic_text(dest, replace=False) as out:
+        json.dump({"pair": pair, "support": pairs[pair], "fixture_sha256": tier_data.digest(FIXTURE)}, out)
+    return pair
+
+
 def pass_run(model, stage):
     name = model + "-" + stage
     folder = RUNS / name
@@ -191,7 +221,7 @@ def pass_run(model, stage):
         options = ["--backend", "ollama", "--endpoint", OLLAMA, "--model", tag]
         if native:
             options.extend(["--native", native, "--native-tokenizer", src])
-        if baseline and model in ("phi4", "q35-4"):
+        if baseline and model == "phi4":
             options.extend(["--safe-token", "safe", "--unsafe-token", "unsafe"])
         if not baseline:
             options.extend(["--safe-token", " safe", "--unsafe-token", " unsafe"])
@@ -281,6 +311,9 @@ def pass_run(model, stage):
                 "--endpoint",
                 TEI,
             )
+        if baseline and model == "q35-4":
+            safe, unsafe = baseline_tokens(folder, tag)
+            options.extend(["--safe-token", safe, "--unsafe-token", unsafe])
         nbytes = artifact.stat().st_size
         from export_chat import BOUNDS
         low, high = BOUNDS[TIER]

@@ -79,6 +79,20 @@ class GuardTuningChecks(unittest.TestCase):
         np.testing.assert_array_equal(tiled[cols], np.arange(12))
         np.testing.assert_array_equal(rows, np.arange(5))
 
+    def test_native_token_choice_freezes_before_scoring(self):
+        from unittest.mock import patch
+        from spark_experiment import baseline_tokens
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            fixture = folder / "fixture.tsv"
+            fixture.write_text("synthetic fixture")
+            reply = {"logprobs": [{"token": " Safe", "top_logprobs": [{"token": " Unsafe"}]}]}
+            with patch("spark_experiment.FIXTURE", fixture), patch("verify_chat.probe_inputs",
+                    return_value={"1": "example"}), patch("backends.request_json", return_value=reply) as call:
+                self.assertEqual(list(baseline_tokens(folder, "fixture")), [" Safe", " Unsafe"])
+                self.assertEqual(baseline_tokens(folder, "fixture"), [" Safe", " Unsafe"])
+                self.assertEqual(call.call_count, 1)
+
     def test_interrupted_benchmark_preserves_first_attempts(self):
         import csv
         import contextlib
