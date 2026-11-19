@@ -1,0 +1,2 @@
+# Tab-separated data: an empty last column leaves a trailing tab, which is content, not a whitespace error.
+data/*.tsv -whitespace
