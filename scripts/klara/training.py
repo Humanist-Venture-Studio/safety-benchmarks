@@ -330,6 +330,14 @@ def fit(model, tokenizer, encode, forward, rows, a):
     eval_pilot = random.Random(a.seed + 3).sample(
         train, min(len(train), 3 * eval_batch)
     )
+    if a.tier == "maxx" and a.eval_batch and len(train) >= 8 * eval_batch:
+        # The full held-fold evaluator batches adjacent lengths. Estimate its speed
+        # on the same padding pattern, spread across the training length distribution.
+        by_length = sorted(train, key=lambda r: len(cache[r["row_id"]]))
+        eval_pilot = []
+        for i in range(8):
+            start = int((i + 0.5) * (len(train) - eval_batch) / 8)
+            eval_pilot.extend(by_length[start:start + eval_batch])
     with torch.no_grad():
         batch(pilot)[0][1].mean().item()  # warm up the evaluation kernels
         tick = time.monotonic()

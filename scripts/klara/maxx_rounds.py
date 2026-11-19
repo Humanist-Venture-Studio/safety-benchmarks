@@ -74,6 +74,8 @@ def run_candidate(model):
     if not done(model, "train", "r2"):
         invoke("maxx_source.py", model, heavy=True)
         for i in range(folds):
+            if model == "phi4" and i > 0:
+                fold_seconds = 1200
             execute(model, "train", "r1", *common, "--seconds", fold_seconds, "--epochs", 1, fold=i)
         diag = RESULTS / "diagnostics"
         invoke("spark_report.py", "--diagnose", model, "--out", diag)
@@ -83,6 +85,9 @@ def run_candidate(model):
         times = events(model)
         fold_cost = sum(e["seconds"] for e in times if e["fold"] is not None)
         serving = next(e["seconds"] for e in times if (e["action"], e["stage"]) == ("score", "r1"))
+        records = map(json.loads, (LOGS / "commands.jsonl").read_text().splitlines())
+        fold_cost += sum(e["seconds"] for e in records if e.get("code", 0) != 0
+                         and e.get("step", "").startswith(model + "-fold"))
         seconds = min(final_seconds, int(10800 - fold_cost - 1.1 * serving - 60))
         require(seconds > 0, "no time left for final fit")
         execute(model, "train", "r2", *common, "--seconds", seconds,
