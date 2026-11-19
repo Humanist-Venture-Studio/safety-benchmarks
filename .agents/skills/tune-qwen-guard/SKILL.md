@@ -22,3 +22,12 @@ For a larger weights-only experiment, reuse the same split, prompt-token check a
 3. Calibrate verdict and formatting tokens on the exported model. Use the baseline’s Unsafe/Controversial judgments as a secondary signal on correctly flagged training examples. After choosing the settings, the earlier run refit the output words on training plus validation and evaluated the installed tag on all rows. Only the 624 test rows remained independent of the final fit.
 
 The included trainer implements the smaller verdict-layer experiment. Run the CLI comparison to obtain a score for the weights it produces.
+
+## Multi-turn conversations
+
+For `data-multi.tsv`, use [scripts/tune_multi.py](scripts/tune_multi.py), [scripts/benchmark_multi.py](scripts/benchmark_multi.py) and [scripts/overlap_multi.py](scripts/overlap_multi.py) as the README's multi-turn section shows. They differ from the single-turn recipe in four ways.
+
+1. The prompt renders all four turns as `Student:` and `Assistant:` lines, and the label is `consensus_rating` with three classes: `SAFE` is Safe, `FLAGGED` is Controversial and `UNSAFE` is Unsafe. Score the exact three-way match first, then Safe against flagged.
+2. The split is the committed `data-multi-split.tsv`, a simple random split. The conversations are assembled from reused messages, so always report `overlap_multi.py` beside a held-out score.
+3. The trainer fits each verdict row separately and adds anchors inside category names. Select on validation only, and prefer the fit that changes no anchor token: a first fit without those anchors wrote names such as `Unethical Safe`.
+4. The evaluator calls Ollama's API with temperature 0. With the tag's default sampling the baseline changes its verdict on about one conversation in six, so compare tags under the same setting.
