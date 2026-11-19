@@ -293,6 +293,8 @@ def pass_run(model, stage):
                     LICENSE[model],
                     "--output",
                     out,
+                    *(["--resume-interrupted"] if os.environ.get("KLARA_RESUME_INTERRUPTED") == "1"
+                      and out.with_suffix(out.suffix + ".partial").exists() else []),
                     *options,
                 )
     calibrate_pass(name)

@@ -57,6 +57,45 @@ class GuardTuningChecks(unittest.TestCase):
             codes = np.rint((decoded - offset) / np.where(scale == 0, 1, scale)).clip(lo, hi)
             np.testing.assert_allclose(codes * scale + offset, decoded)
 
+    def test_interrupted_benchmark_preserves_first_attempts(self):
+        import csv
+        import contextlib
+        import sys
+        from unittest.mock import patch
+        import benchmark
+
+        rows = [dict(row_id=str(i), split="validation", turns="1", trigger="none",
+                     rule_id="", clarity="clear", is_unsafe="0", turn1_request="hi",
+                     turn1_response="hello") for i in range(4)]
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            data = root / "development.tsv"
+            with data.open("w") as f:
+                writer = csv.DictWriter(f, rows[0], delimiter="\t")
+                writer.writeheader()
+                writer.writerows(rows)
+            (root / "dataset.json").write_text("{}")
+            output = root / "scores.tsv"
+            args = ["benchmark.py", "--backend", "ollama", "--model", "fixture", "--tier", "flash",
+                    "--data", str(data), "--split", "validation", "--output", str(output)]
+            reply = ({"unsafe_probability": 0.1, "label": "safe"}, "", "", None)
+            with patch("benchmark.Backend") as backend, patch("tier_data.verify_input"), \
+                    patch.object(sys, "argv", args), contextlib.redirect_stdout(io.StringIO()):
+                scorer = backend.return_value
+                scorer.name, scorer.model = "ollama", "fixture"
+                scorer.threshold, scorer.calibration_hash = 0.5, ""
+                scorer.prompt_hash, scorer.raw_probability = "test", 0.1
+                scorer.score.side_effect = [reply, KeyboardInterrupt(), reply, reply]
+                with self.assertRaises(KeyboardInterrupt):
+                    benchmark.main()
+                args.append("--resume-interrupted")
+                benchmark.main()
+            with output.open() as f:
+                saved = list(csv.DictReader(f, delimiter="\t"))
+            self.assertEqual([r["correct"] for r in saved], ["1", "0", "1", "1"])
+            self.assertEqual(scorer.score.call_count, 4)
+            self.assertEqual(saved[1]["error"], "interrupted before durable verdict")
+
     def test_native_multitoken_verdict_and_missing_alternative(self):
         from ollama_native import native_verdict
 

@@ -1,6 +1,7 @@
 """Run one first-attempt benchmark and save its inputs to the metrics."""
 import argparse
 import csv
+import fcntl
 import os
 import random
 import time
@@ -9,7 +10,7 @@ from pathlib import Path
 from backends import TIERS, Backend, backend_args
 from common import DATA, WORK, messages_from_tsv, read_tsv, require
 from metrics import print_metrics
-from results import FIELDS
+from results import FIELDS, validate_run
 
 
 def selection(path, split):
@@ -32,6 +33,8 @@ def main():
     p.add_argument("--data", type=Path, default=DATA)
     p.add_argument("--limit", type=int, help="score a fixed-seed subset of the selected split")
     p.add_argument("--output", type=Path)
+    p.add_argument("--resume-interrupted", action="store_true",
+                   help="recover a local pinned run, counting an unrecorded in-flight row as malformed")
     p.add_argument("--stage", default="baseline", help="e.g. baseline, round-1, round-2 or prompt-v1")
     p.add_argument("--size-bytes", type=int)
     p.add_argument("--licence", default="")
@@ -54,13 +57,35 @@ def main():
     require(not path.exists(), f"{path} already exists")
     partial = path.with_suffix(path.suffix + ".partial")
     results = []
-    with partial.open("x", encoding="utf-8", newline="") as out:
-        writer = csv.DictWriter(out, FIELDS + ["raw_probability", "calibration_sha256"], delimiter="\t", lineterminator="\n")
-        writer.writeheader()
-        for r in rows:
+    fields = FIELDS + ["raw_probability", "calibration_sha256"]
+    if a.resume_interrupted:
+        require(a.backend in ("tei", "ollama") and (a.data.parent / "dataset.json").is_file(),
+                "recovery needs a pinned local benchmark")
+    with partial.open("r+" if a.resume_interrupted else "x", encoding="utf-8", newline="") as out:
+        fcntl.flock(out, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        writer = csv.DictWriter(out, fields, delimiter="\t", lineterminator="\n")
+        if a.resume_interrupted:
+            reader = csv.DictReader(out, delimiter="\t")
+            require(reader.fieldnames == fields, "partial result schema differs")
+            results = list(reader)
+            if results:
+                validate_run(results)
+            require(len(results) <= len(rows), "partial result longer than split")
+            for prior, row in zip(results, rows):
+                require(all(prior[k] == row[k] for k in ("row_id", "is_unsafe", "turns", "rule_id", "trigger", "clarity"))
+                        and all(prior[k] == ("" if v is None else str(v)) for k, v in meta.items()),
+                        "partial result differs from current model, metadata or ordered split")
+            out.seek(0, os.SEEK_END)
+        else:
+            writer.writeheader()
+        interrupted = len(results) if a.resume_interrupted else -1
+        for i, r in enumerate(rows[len(results):], len(results)):
             messages = messages_from_tsv(r)
             start = time.monotonic_ns()
-            contract, raw, error, cost = backend.score(messages)
+            if i == interrupted:
+                contract, raw, error, cost = None, "", "interrupted before durable verdict", None
+            else:
+                contract, raw, error, cost = backend.score(messages)
             ms = (time.monotonic_ns() - start) / 1e6
             prediction = contract or {"unsafe_probability": "", "label": ""}
             correct = not error and (prediction["label"] == "unsafe") == bool(int(r["is_unsafe"]))

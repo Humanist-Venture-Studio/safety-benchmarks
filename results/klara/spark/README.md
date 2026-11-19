@@ -4,11 +4,11 @@ Ettin round two is my recommendation for local serving. At the validation-fitted
 
 The [two tables](tables.md) give the raw 0.5 and selected operating points. Each split contains 900 safe and 100 unsafe rows. The [metrics](metrics.tsv) and [pass metadata](pass-metadata.tsv) give interval estimates, calibration coefficients, deployment digests and machine times. The [data fingerprint](dataset.json) covers the final source and the train/validation projection. The test split remains sealed.
 
-| Round two | Change in validation accuracy from round one | False positives, R1 → R2 | Missed unsafe, R1 → R2 | Accuracy in rehearsal → final |
-|---|---:|---:|---:|---:|
-| Mezzo | +0.2 pp | 2 → 1 | 9 → 8 | 989 → 991 of 1,000 |
-| Ettin | +0.4 pp | 5 → 1 | 6 → 6 | 990 → 993 of 1,000 |
-| SmolLM2 | +0.6 pp | 18 → 9 | 17 → 20 | 981 → 971 of 1,000 |
+| Round two | Change in validation accuracy from round one | False positives, R1 → R2 | Missed unsafe, R1 → R2 |
+|---|---:|---:|---:|
+| Mezzo | +0.2 pp | 2 → 1 | 9 → 8 |
+| Ettin | +0.4 pp | 5 → 1 | 6 → 6 |
+| SmolLM2 | +0.6 pp | 18 → 9 | 17 → 20 |
 
 **Mezzo.** Its two held training folds missed 101 unsafe rows and flagged 166 safe rows, including 111 look-alikes. The FP16 warm start repeated fold errors, look-alikes and weak rules A13, A1 and A10, using one epoch at 0.00001. The time budget allowed 3,192 distinct optimizer rows.
 
