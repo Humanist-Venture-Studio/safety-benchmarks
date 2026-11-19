@@ -154,7 +154,8 @@ def main():
     ]
     if a.r1_gguf:
         require(a.init_adapter and not a.fp16, "K-quant fitting needs a round-one adapter")
-        targets = [name for name in targets if name.endswith(".v_proj")][-4:]
+        suffix = ".qkv_proj" if base.config.model_type == "phi3" else ".v_proj"
+        targets = [name for name in targets if name.endswith(suffix)][-4:]
     require(targets and a.rank > 0, "no language projections or invalid rank")
     model = get_peft_model(
         base,

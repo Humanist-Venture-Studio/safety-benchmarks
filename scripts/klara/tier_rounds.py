@@ -75,20 +75,23 @@ def flash_rounds():
         execute("score", model, "r2")
 
 
-def report(tier):
+def report(tier, models=None):
     from spark_experiment import LOGS, RESULTS, RUNS, DATA, LICENSE
 
     target = PUBLIC / tier
     provenance = tier_data.verify(LOGS)
-    invoke("spark_report.py", "--out", target)
+    models = models or list(LICENSE)
+    invoke("spark_report.py", "--out", target, "--models", *models)
     (target / "dataset.json").write_bytes((LOGS / "dataset.json").read_bytes())
     tables = target / "tables.md"
     content = f'Final dataset SHA-256 `{provenance["source_sha256"]}`.\n\n' + tables.read_text()
+    if tier == "maxx":
+        content += "\nQwen3.5-4B replaces Granite Guardian 3.3 8B, measured at 76 backward tokens/s in preflight.\n"
     for dest in (RESULTS / "tables.md", tables):
         with atomic_text(dest) as out:
             out.write(content)
     checks = []
-    for model in LICENSE:
+    for model in models:
         invoke("spark_report.py", "--out", target / "diagnostics", "--diagnose", model)
         for stage in ("baseline", "r1", "r2"):
             path = LOGS / f"{model}-{stage}-verify.log"
@@ -115,7 +118,7 @@ def report(tier):
     browser = target / "browser"
     browser.mkdir(exist_ok=True)
     os.environ["NODE_PATH"] = str(WORK / "env/node/node_modules")
-    for model in LICENSE:
+    for model in models:
         folder = RUNS / f"{model}-r2"
         scores = RESULTS / f"{model}-r2-validation.tsv"
         dest = RESULTS / f"{model}-r2-browser200.tsv"

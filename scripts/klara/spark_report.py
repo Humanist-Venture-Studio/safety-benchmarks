@@ -155,7 +155,9 @@ def main():
         choices=LICENSE,
         help="write train OOF and validation R1 error counts only",
     )
+    p.add_argument("--models", nargs="+", choices=LICENSE, help="completed candidates to recount")
     a = p.parse_args()
+    models = a.models or list(LICENSE)
     a.out.mkdir(parents=True, exist_ok=True)
     meta = {r["row_id"]: r for r in read_tsv(DATA)}
     if a.diagnose:
@@ -183,7 +185,7 @@ def main():
             "| Candidate | Pass | Calibrated cutoff | Accuracy, raw → selected | FPR, raw → selected | Missed / 100, raw → selected | Recall | Precision | AUROC | PR-AUC | Brier | Malformed | Median ms | Bytes | Licence | Unique fit rows | Machine min |",
             "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|",
         ]
-        for model in LICENSE:
+        for model in models:
             for stage in STAGES:
                 name = f"{model}-{stage}"
                 path = RESULTS / f"{name}-{split}-raw.tsv"
@@ -222,15 +224,18 @@ def main():
                 )
                 from export_chat import BOUNDS
                 lo, hi = BOUNDS[TIER]
-                require(
-                    lo <= artifact.stat().st_size == int(raw[0]["size_bytes"]) <= hi,
-                    "retained artifact size diverged from benchmark",
-                )
                 if name not in artifact_hashes:
-                    with artifact.open("rb") as f:
-                        artifact_hashes[name] = hashlib.file_digest(
-                            f, "sha256"
-                        ).hexdigest()
+                    if artifact.is_file():
+                        nbytes = artifact.stat().st_size
+                        with artifact.open("rb") as f:
+                            artifact_hashes[name] = hashlib.file_digest(f, "sha256").hexdigest()
+                    else:
+                        require(TIER == "maxx" and stage != "r2", "missing retained artifact")
+                        receipt = json.loads((artifact.parent / "deployed.json").read_bytes())
+                        nbytes = receipt["bytes"]
+                        artifact_hashes[name] = receipt["sha256"]
+                    require(lo <= nbytes == int(raw[0]["size_bytes"]) <= hi,
+                            "deployment size diverged from benchmark")
                 if split == "validation" and stage == "r2":
                     for r in diagnose(chosen, meta):
                         miss_rows.append({"model": model, **r})

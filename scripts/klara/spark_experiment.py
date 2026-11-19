@@ -21,7 +21,7 @@ import tier_data
 SCRIPTS = Path(__file__).resolve().parent
 MODELS = WORK / "models"
 TIER = os.environ.get("KLARA_EXPERIMENT_TIER", "spark")
-require(TIER in ("spark", "flash"), "unknown experiment tier")
+require(TIER in ("spark", "flash", "maxx"), "unknown experiment tier")
 RUNS = MODELS / (TIER + "-real")
 LOGS = WORK / "logs" / TIER
 RESULTS = WORK / "results" / TIER
@@ -40,18 +40,21 @@ LICENSE = {"mezzo": "Apache-2.0", "ettin": "MIT", "smollm": "Apache-2.0"}
 
 
 FLASH_QUANT = {"granite": "Q5_K_M", "q35-2": "Q6_K", "qguard06": "F16"}
+MAXX_QUANT = {"phi4": "Q8_0", "qguard8": "Q4_K_S", "q35-4": "Q8_0"}
+if TIER == "maxx":
+    LICENSE = {"phi4": "MIT", "qguard8": "Apache-2.0", "q35-4": "Apache-2.0"}
 if TIER == "flash":
     LICENSE = dict.fromkeys(FLASH_QUANT, "Apache-2.0")
 
 
 def source(model):
-    if model in ("q35-2", "qguard06"):
+    if model in ("q35-2", "qguard06") or model in MAXX_QUANT:
         return MODELS / "tier-proof" / model / "source"
     return MODELS / "source" / model
 
 
 def is_chat_model(model):
-    return model == "smollm" or model in FLASH_QUANT
+    return model == "smollm" or model in FLASH_QUANT or model in MAXX_QUANT
 
 
 def record(event):
@@ -183,11 +186,13 @@ def pass_run(model, stage):
     if is_chat:
         chat_name = CHAT_NAME if model == "smollm" else "-".join(filter(None, (model, "final", revision)))
         tag = f"klara/cand-{TIER}-{chat_name}-{stage}"
-        native = {"granite": "granite", "qguard06": "qwen-guard"}.get(model) if baseline else None
+        native = {"granite": "granite", "qguard06": "qwen-guard", "qguard8": "qwen-guard"}.get(model) if baseline else None
         with_service = service(name, OLLAMA, "/api/tags", "ollama", "serve")
         options = ["--backend", "ollama", "--endpoint", OLLAMA, "--model", tag]
         if native:
             options.extend(["--native", native, "--native-tokenizer", src])
+        if baseline and model in ("phi4", "q35-4"):
+            options.extend(["--safe-token", "safe", "--unsafe-token", "unsafe"])
         if not baseline:
             options.extend(["--safe-token", " safe", "--unsafe-token", " unsafe"])
     else:
@@ -214,6 +219,10 @@ def pass_run(model, stage):
     with with_service:
         if is_chat:
             artifact = folder / "candidate.gguf"
+            reference = folder / "hf-reference.json"
+            if TIER == "maxx" and not baseline and not reference.exists():
+                run(name + "-reference", PYTHON, SCRIPTS / "verify_chat.py", "--run", folder,
+                    "--tag", tag, "--data", FIXTURE, "--save-reference", reference)
             if not artifact.exists():
                 run(
                     name + "-export",
@@ -228,17 +237,20 @@ def pass_run(model, stage):
                     "--round",
                     stage,
                     "--quant",
-                    FLASH_QUANT.get(model, "Q8_0"),
+                    (FLASH_QUANT | MAXX_QUANT).get(model, "Q8_0"),
                     *(["--native-baseline", native] if native else []),
                     *(["--baseline-source", src] if baseline else []),
                 )
-            if TIER == "flash":
+            if TIER in ("flash", "maxx"):
                 # The private Ollama store and the kept export are the same GGUF.
                 # Link the verified blob so keeping nine candidates costs one copy apiece.
                 digest = tier_data.digest(artifact)
                 blob = MODELS / "ollama/blobs" / ("sha256-" + digest)
                 require(blob.is_file() and tier_data.digest(blob) == digest,
                         "private Ollama blob differs from exported artifact")
+                if TIER == "maxx":
+                    with atomic_text(folder / "deployed.json") as out:
+                        json.dump(dict(bytes=artifact.stat().st_size, sha256=digest, tag=tag), out)
                 if not os.path.samefile(artifact, blob):
                     link = artifact.with_suffix(".verified-link")
                     os.link(blob, link)
@@ -254,6 +266,7 @@ def pass_run(model, stage):
                     tag,
                     "--data",
                     FIXTURE,
+                    *(["--reference", reference] if TIER == "maxx" else []),
                 )
         else:
             artifact = hf / "model.safetensors"
@@ -340,9 +353,9 @@ def train(
         "--positive-weight",
         positive_weight,
         "--batch",
-        2 if TIER == "flash" else (4 if is_chat else 8),
+        1 if model == "qguard8" else 2 if TIER in ("maxx", "flash") else (4 if is_chat else 8),
         "--max-planning-rate",
-        {"mezzo": 7459, "ettin": 7437, "smollm": 3156, "granite": 526, "q35-2": 649, "qguard06": 1338}[model],
+        {"mezzo": 7459, "ettin": 7437, "smollm": 3156, "granite": 526, "q35-2": 649, "qguard06": 1338, "phi4": 445, "qguard8": 238, "q35-4": 273}[model],
     ]
     if is_chat:
         cmd.extend(["--rank", rank, "--verdict-smoothing", smoothing])
@@ -351,7 +364,7 @@ def train(
     if stage == "baseline":
         require(model == "ettin", "only Ettin fits a baseline head")
         cmd.append("--probe")
-    eval_batch = 8 if TIER == "flash" else 16
+    eval_batch = 4 if TIER == "maxx" else 8 if TIER == "flash" else 16
     if fold is not None:
         cmd.extend(["--fold", fold, "--eval-batch", eval_batch])
     elif stage == "r2":

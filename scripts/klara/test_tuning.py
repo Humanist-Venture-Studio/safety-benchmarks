@@ -45,9 +45,14 @@ class GuardTuningChecks(unittest.TestCase):
         except ImportError:
             self.skipTest("tuning environment required")
         rng = np.random.default_rng(5)
-        for kind in (gguf.GGMLQuantizationType.Q5_K, gguf.GGMLQuantizationType.Q6_K):
+        kind_id = gguf.GGMLQuantizationType
+        for kind in (kind_id.Q4_K, kind_id.Q5_K, kind_id.Q6_K, kind_id.Q8_0):
             packed = rng.integers(0, 256, (3, gguf.GGML_QUANT_SIZES[kind][1]), dtype=np.uint8)
-            if kind == gguf.GGMLQuantizationType.Q5_K:
+            if kind == kind_id.Q8_0:
+                packed[:, :2] = np.array([.0625], dtype=np.float16).view(np.uint8)
+                # The converter emits symmetric codes from -127 through +127.
+                packed[packed == 128] = 129
+            elif kind in (kind_id.Q4_K, kind_id.Q5_K):
                 packed[:, :4] = np.array([.0625, .125], dtype=np.float16).view(np.uint8)
             else:
                 packed[:, -2:] = np.array([.0625], dtype=np.float16).view(np.uint8)
@@ -56,6 +61,23 @@ class GuardTuningChecks(unittest.TestCase):
             scale, offset = scales.reshape(-1, 1), offsets.reshape(-1, 1)
             codes = np.rint((decoded - offset) / np.where(scale == 0, 1, scale)).clip(lo, hi)
             np.testing.assert_allclose(codes * scale + offset, decoded)
+
+    def test_qwen_linear_attention_inverse_head_order(self):
+        try:
+            import numpy as np
+            from flash_precision import linear_head_order
+        except ImportError:
+            self.skipTest("tuning environment required")
+        config = SimpleNamespace(linear_num_key_heads=2, linear_num_value_heads=6,
+                                 linear_key_head_dim=2, linear_value_head_dim=2)
+        tiled = np.arange(12).reshape(2, 3, 2).swapaxes(0, 1).reshape(-1)
+        qkv = np.r_[np.arange(8), 8 + tiled]
+        rows, cols = linear_head_order(config, "block.linear_attn.in_proj_qkv", np.arange(20))
+        np.testing.assert_array_equal(qkv[rows], np.arange(20))
+        self.assertIsNone(cols)
+        rows, cols = linear_head_order(config, "block.linear_attn.out_proj", np.arange(5))
+        np.testing.assert_array_equal(tiled[cols], np.arange(12))
+        np.testing.assert_array_equal(rows, np.arange(5))
 
     def test_interrupted_benchmark_preserves_first_attempts(self):
         import csv

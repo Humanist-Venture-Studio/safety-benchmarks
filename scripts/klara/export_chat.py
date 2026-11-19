@@ -172,6 +172,11 @@ def main():
 
     if not a.merge_only:
         check_tag()
+    if a.tier == "maxx" and a.round != "fixture":
+        from maxx_space import reserve, source_weights
+        bounded = True
+    else:
+        bounded = False
     if a.baseline_source:
         require(a.round == "baseline", "baseline tag required")
         source = a.baseline_source
@@ -215,6 +220,8 @@ def main():
                     tok.chat_template == JINJA, "prepared checkpoint template mismatch"
                 )
             else:
+                if bounded:
+                    reserve(sum(p.stat().st_size for p in source_weights(source)) + 150_000_000, "merge")
                 base = load_base(source)
                 if recipe.get("init_adapter"):
                     base = PeftModel.from_pretrained(
@@ -246,6 +253,9 @@ def main():
                 return
         direct = a.quant in ("F16", "Q8_0")
         tmp = scratch / "converted.gguf"
+        if bounded:
+            budget = BOUNDS[a.tier][1] if direct else sum(p.stat().st_size for p in hf.glob("*.safetensors"))
+            reserve(budget + 50_000_000, "conversion", evict=None if a.baseline_source else source)
         tick = time.monotonic()
         subprocess.run(
             [
@@ -264,6 +274,8 @@ def main():
         if not a.baseline_source:
             shutil.rmtree(hf)  # Private staging, or the explicitly consumed merge.
         if not direct:
+            if bounded:
+                reserve(BOUNDS[a.tier][1], "quantization", evict=source)
             tick = time.monotonic()
             quantized = scratch / "quantized.gguf"
             subprocess.run(
@@ -276,6 +288,8 @@ def main():
         require(low <= size <= high, f"GGUF size {size} outside {a.tier} bounds")
         tmp.rename(out)
     tick = time.monotonic()
+    if bounded:
+        reserve(out.stat().st_size + 50_000_000, "private registration", evict=source)
     register(a, out, tag, check_tag, embedded, tok)
     timings["register_seconds"] = time.monotonic() - tick
     (a.run / "export-timing.json").write_text(json.dumps(timings))
