@@ -278,6 +278,8 @@ def main():
                     f"missing timing for {name}",
                 )
                 seconds = sum(e["seconds"] for e in timings)
+                seconds += sum(e["seconds"] for e in commands if e.get("code", 0) != 0
+                               and e.get("step", "").startswith(name + "-"))
                 seconds += sum(e["interrupted_seconds"] for e in commands if "interrupted_seconds" in e
                                and e["model"] == model and e["stage"] == stage)
                 seconds += sum(

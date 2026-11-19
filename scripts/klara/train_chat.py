@@ -123,6 +123,10 @@ def main():
     base = load_base(a.source)
     if a.init_adapter:
         base = PeftModel.from_pretrained(base, a.init_adapter).merge_and_unload()
+    if a.r1_gguf and base.config.model_type == "granite":
+        # In the frozen lower blocks MPS SDPA cannot run the training dropout
+        # without gradients. Eager attention preserves the native dropout rate.
+        base.set_attn_implementation("eager")
     if a.fp16:
         base.to(dtype=torch.float16)
     suffixes = {
