@@ -64,7 +64,12 @@ def run_candidate(model):
     release_export(model, "baseline")
     if not done(model, "train", "r1"):
         invoke("maxx_source.py", model, heavy=True)
-        execute(model, "train", "r1", *common, "--seconds", 10020, "--epochs", 2)
+        history = (LOGS / "commands.jsonl").read_text().splitlines()
+        prior = sum(e.get("interrupted_seconds", 0) for e in map(json.loads, history)
+                    if e.get("model") == model and e.get("stage") == "r1" and e.get("fold") is None)
+        seconds = int(10020 - prior)
+        require(seconds > 0, "interrupted fits exhausted the round-one time box")
+        execute(model, "train", "r1", *common, "--seconds", seconds, "--epochs", 2)
     execute(model, "score", "r1")
     if not done(model, "train", "r2"):
         invoke("maxx_source.py", model, heavy=True)
