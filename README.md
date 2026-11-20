@@ -95,9 +95,38 @@ In the earlier Humanist experiment, tuning 45 tensors raised held-out accuracy f
 
 - `data.tsv` — Benchmark dataset containing prompts (`request`), paired safe and unsafe replies (`simulated_response`), categories, languages, and binary safety labels (`is_safe`).
 - `data-multi.tsv` — 10,000 hyper-realistic four-turn student ↔ AI conversations for the same 62 categories: 7,500 safe / 2,500 unsafe (25%). Roughly half the unsafe rows are triggered by the student and half by the assistant (`trigger_source`). Unsafe coverage spans illegal acts (piracy, shoplifting, hacking, vandalism), sexually explicit content and boundary violations, substances, violence, self-harm signals, privacy, scams, and hate speech. Every row (including the original 2,000) goes through a deterministic realism pass (chat abbreviations, occasional typos, exclamation moderation), and rows are deduplicated across the whole file. See `reports/data-multi-qa.md` for composition, coverage stats, and the dataset's self-graded quality assessment (**A-**). Columns N–U hold four independent blind relabellings: `fable_*` by Product Fox (claude-fable-5-2), `gemini_*` by Research Assistant (gemini-4-carbon-medium), `astra_*` by Systems Racoon (gpt-6-astra) and `wonderful_*` by Mike Ross Esq. (muse-wonder-full-1.0). Each bot read every conversation without seeing `trigger_source` or `is_safe`; `<bot>_is_safe` is 1 or 0 and `<bot>_trigger_source` is none, student or assistant. The rubric, agreement statistics and disagreement rows are in `reports/data-multi-labels.md`. Column V, `consensus_rating`, is the primary output column: it sums the five 0/1 ratings (`is_safe` plus the four `<bot>_is_safe` columns) and reads UNSAFE for a sum of 0–2, FLAGGED for 3–4 and SAFE for 5 (6,093 SAFE, 1,546 FLAGGED, 2,361 UNSAFE).
-- `data/` — The Klara dataset and the rule tables behind it, for training and testing detectors of unsafe conversations between a K-12 student and an AI tutor. All of it is synthetic: no real student, tutor or conversation.
-  - `data/data-klara.tsv` — 10,000 conversations, one per row, written one at a time by a language-model bot from 1,250 scenario seeds. 2,000 rows for each length from 1 to 5 turns (a turn is one student message plus one tutor reply), 90% safe and 10% unsafe in every length bucket. `split` gives 8,000 train, 1,000 validation and 1,000 test rows; a scenario's eight rows always share a split. A row is unsafe (`is_unsafe` = 1) when a legally compliant tutor product would have to act: the tutor's message breaks a rule (`trigger` = assistant), or the student says something a rule requires a response to, such as a self-harm signal (`trigger` = student). `rule_id`, `trigger_turn`, `required_action` and `clarity` describe each unsafe row; `look_alike_of` marks the 1,000 safe rows written to resemble an unsafe one. Unsafe rows show the violation or the risk signal and nothing more: no sexually explicit content and no instructions for harm. Names, schools and addresses are invented, phone numbers use the 555 exchange and emails use example.com or example.org.
-  - `data/rules-klara.tsv` — The 18 rule families used as labels, with what makes a conversation unsafe under each, what stays safe, the required action and the strongest legal status found.
-  - `data/rules-klara-provisions.tsv` — The 205 provisions from 47 laws, bills and policies (New York State, New York City, 20 other states and federal) that the rule families were built from, with status, dates, a quoted passage, the source link and whether the quote was confirmed at the source. A research summary, not legal advice.
-  - The scripts that build, check and score this dataset and the research paper are in pull request #11.
 - `scripts/gen_multi_v2.py` — Regenerates `data-multi.tsv` from the arc and module sources (`multi_safe_part1..12.py`, `multi_unsafe.py`, `multi_unsafe_extra.py`) plus the realism layer in `scripts/realism.py`. Regenerating the file drops the blind-label columns N–U and the consensus column V.
+
+## Klara dataset and tiered models
+
+Klara evaluates whether a K–12 AI tutoring product should act on something the student or tutor said. The dataset contains 10,000 synthetic conversations from 1,250 scenarios. Each scenario belongs to one split. Each split has 90% safe and 10% unsafe rows.
+
+- `data/data-klara.tsv` — 10,000 conversations, one per row, written one at a time by a language-model bot from 1,250 scenario seeds. 2,000 rows for each length from 1 to 5 turns (a turn is one student message plus one tutor reply), 90% safe and 10% unsafe in every length bucket. `split` gives 8,000 train, 1,000 validation and 1,000 test rows; a scenario's eight rows always share a split. A row is unsafe (`is_unsafe` = 1) when a legally compliant tutor product would have to act: the tutor's message breaks a rule (`trigger` = assistant), or the student says something a rule requires a response to, such as a self-harm signal (`trigger` = student). `rule_id`, `trigger_turn`, `required_action` and `clarity` describe each unsafe row; `look_alike_of` marks the 1,000 safe rows written to resemble an unsafe one. Unsafe rows show the violation or the risk signal and nothing more: no sexually explicit content and no instructions for harm. Names, schools and addresses are invented, phone numbers use the 555 exchange and emails use example.com or example.org.
+- `data/rules-klara.tsv` — The 18 rule families used as labels, with what makes a conversation unsafe under each, what stays safe, the required action and the strongest legal status found.
+- `data/rules-klara-provisions.tsv` — The 205 provisions from 47 laws, bills and policies (New York State, New York City, 20 other states and federal) that the rule families were built from, with status, dates, a quoted passage, the source link and whether the quote was confirmed at the source. A research summary, not legal advice.
+
+The operating cutoffs were fixed on validation. Each column below covers 1,000 conversations, including 100 unsafe ones. Each selected model received one attempt per test row.
+
+| Tier | Selected model | Validation correct | Test correct | Test false positives / 900 | Test missed / 100 |
+|---|---|---:|---:|---:|---:|
+| Spark | Ettin Encoder 68M, round 2 | 993 | 988 | 1 | 11 |
+| Flash | Qwen3Guard-Gen-0.6B, round 2 | 996 | 984 | 12 | 4 |
+| Maxx | Qwen3Guard-Gen-8B, round 2 | 990 | 988 | 7 | 5 |
+| Cloud | TypeSafe JEV 1.14, prompt v1 | 999 | 990 | 6 | 4 |
+
+Recount the published results from a checkout with `python3 scripts/klara/heldout_report.py`. Cloud uses a 0.70 cutoff. The saved v1 validation run also records the original 0.50 operating point. The labels and the cloud prompt draw on the same rule definitions. The local browser export was checked under Node, and repeat cloud requests can return different probabilities.
+
+To score a conversation, supply a JSON array of alternating student and tutor messages with `role` and `content` fields. Spark uses the exported TEI model on port 8080. Start it with the command below if needed. Flash and Maxx use the installed Ollama tags `klara/flash` and `klara/maxx` on port 11434. The three local deployments require the exported weights on the serving host. Cloud uses OpenRouter and reads the credential from the file named by `KLARA_OPENROUTER_KEY_FILE`.
+
+```sh
+text-embeddings-router --model-id "$HOME/klara-tiers/deploy/klara-spark/tei" --dtype float16 --hostname 127.0.0.1 --port 8080
+```
+
+```sh
+python3 scripts/klara/score.py --tier spark --input conversation.json
+python3 scripts/klara/score.py --tier flash --input conversation.json
+python3 scripts/klara/score.py --tier maxx --input conversation.json
+python3 scripts/klara/score.py --tier cloud --input conversation.json
+```
+
+[Research paper (HTML)](reports/klara-tiers.html) · [PDF](reports/klara-tiers.pdf) · [Quality report](reports/klara-quality.md) · [Scoring and training scripts](scripts/klara/README.md) · [Test results and breakdowns](results/klara/test/)

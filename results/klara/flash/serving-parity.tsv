@@ -1,0 +1,10 @@
+model	stage	observations	check	max_absolute_delta
+granite	baseline	1	native prompt token count on GGUF registration	0
+granite	r1	5	HF/GGUF IDs, served length and verdict logit margin	0.0495186522603035
+granite	r2	5	HF/GGUF IDs, served length and verdict logit margin	0.0616835355758667
+q35-2	baseline	1	native prompt token count on GGUF registration	0
+q35-2	r1	5	HF/GGUF IDs, served length and verdict logit margin	0.08340070396661758
+q35-2	r2	5	HF/GGUF IDs, served length and verdict logit margin	0.11231793463230133
+qguard06	baseline	1	native prompt token count on GGUF registration	0
+qguard06	r1	5	HF/GGUF IDs, served length and verdict logit margin	0.07156386598944664
+qguard06	r2	5	HF/GGUF IDs, served length and verdict logit margin	0.012315601110458374
