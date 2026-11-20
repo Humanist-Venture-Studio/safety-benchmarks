@@ -11,8 +11,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 WORK = Path.home() / "klara-tiers"
 SHARDS = WORK / "shards"
-RULES = ROOT / "rules-klara.tsv"
-DATA = ROOT / "data-klara.tsv"
+RULES = ROOT / "data/rules-klara.tsv"
+DATA = ROOT / "data/data-klara.tsv"
 SPLITS = {"train": (400, 600), "validation": (50, 75), "test": (50, 75)}
 GRADES = {"elementary_3_5", "middle_6_8", "high_9_12"}
 META = "row_id split scenario_id scenario_kind turns grade_band subject category".split()

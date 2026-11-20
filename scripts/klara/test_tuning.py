@@ -17,6 +17,28 @@ from verify_chat import compare_verdict, reference_key
 
 
 class GuardTuningChecks(unittest.TestCase):
+    def test_named_deployments_use_validation_calibration(self):
+        import argparse
+        from unittest.mock import patch
+        from backends import Backend, backend_args
+
+        parser = argparse.ArgumentParser()
+        backend_args(parser)
+        for tier in ("spark", "flash", "maxx"):
+            with self.subTest(tier=tier):
+                spec = json.loads((Path(__file__).parent / "calibration" / f"{tier}.json").read_bytes())
+                with patch.dict("os.environ", {"KLARA_SPARK_DIR": "/example"}), patch(
+                    "backends.request_json", return_value={"model_id": str(Path("/example/tei").resolve())}
+                ):
+                    backend = Backend(parser.parse_args(["--tier", tier]))
+                self.assertEqual(backend.calibration, spec)
+                self.assertEqual(backend.threshold, spec["threshold"])
+                if tier != "spark":
+                    self.assertEqual(backend.tokens, (" safe", " unsafe"))
+        with patch("backends.request_json", return_value={"model_id": "/unrelated"}):
+            with self.assertRaisesRegex(ValueError, "model_id"):
+                Backend(parser.parse_args(["--tier", "spark"]))
+
     def test_dataset_pin_checks_source_and_projected_bytes(self):
         from tier_data import digest, prepare, verify
 

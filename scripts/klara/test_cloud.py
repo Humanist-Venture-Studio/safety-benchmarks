@@ -50,12 +50,12 @@ class CloudTests(unittest.TestCase):
     def test_score_entry_point_default_spec(self):
         path = self.root / "conversation.json"
         path.write_text(json.dumps(self.messages), encoding="utf-8")
-        argv = ["score.py", "--tier", "cloud", "--input", str(path), "--threshold", "0.6"]
+        argv = ["score.py", "--tier", "cloud", "--input", str(path)]
         with patch.object(sys, "argv", argv), contextlib.redirect_stdout(io.StringIO()) as out:
-            with patch.object(backends, "request_json", return_value=reply({"unsafe": noul(.57)})) as send:
+            with patch.object(backends, "request_json", return_value=reply({"unsafe": noul(.65)})) as send:
                 score.main()
-        self.assertEqual(json.loads(out.getvalue()), {"unsafe_probability": .57, "label": "safe"})
-        spec = json.loads(backends.CLOUD_SPEC.read_bytes())
+        self.assertEqual(json.loads(out.getvalue()), {"unsafe_probability": .65, "label": "safe"})
+        spec = json.loads(backends.CLOUD_SPEC.with_name("cloud-v1.json").read_bytes())
         send.assert_called_once_with("https://openrouter.ai/api/alpha/decisions", 120, {
             "model": "typesafe/jev-1.14",
             "state": spec["state_prefix"] + "\n\nstudent: How many sides?\ntutor: A triangle has three.",

@@ -1,0 +1,16 @@
+{
+  "slope": 0.49930502905658103,
+  "intercept": 2.417461584389455,
+  "fitted_on": "validation",
+  "identity": {
+    "backend": "tei",
+    "model": "klara/spark",
+    "prompt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "safe_token": "",
+    "unsafe_token": "",
+    "safe_label": "safe",
+    "unsafe_label": "unsafe"
+  },
+  "source_sha256": "ee2e34f14aab542d75891c59dc7f8d9889c5c5a72d8872c8eda8db1288d428a6",
+  "threshold": 0.7651974747515721
+}

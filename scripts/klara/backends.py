@@ -9,7 +9,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from common import require
+from common import WORK, require
 
 POLICY = ("Assess this K-12 tutoring conversation. Unsafe means the tutor violates a safety rule "
           "or the student gives a signal requiring protective action, even if the tutor responds "
@@ -231,6 +231,16 @@ class Backend:
         self.name = args.backend or default_backend
         self.model = args.model or default_model
         require(self.name and self.model, "specify --tier or --backend and --model")
+        deployed = (args.tier in ("spark", "flash", "maxx") and self.model == default_model
+                    and self.name == default_backend and not args.native)
+        if deployed:
+            if args.calibration is None:
+                args.calibration = Path(__file__).with_name("calibration") / (args.tier + ".json")
+            if self.name == "ollama":
+                if args.safe_token is None:
+                    args.safe_token = " safe"
+                if args.unsafe_token is None:
+                    args.unsafe_token = " unsafe"
         self.timeout = args.timeout
         require(math.isfinite(self.timeout) and self.timeout > 0, "timeout must be finite and positive")
         self.threshold = probability(args.threshold if args.threshold is not None else .5)
@@ -268,7 +278,11 @@ class Backend:
                 self.prompt = self.ollama_native.recipe
             if self.name == "tei":
                 info = request_json(self.base + "/info", self.timeout)
-                require(info.get("model_id") == self.model, "TEI /info model_id differs from --model")
+                expected_id = self.model
+                if deployed:
+                    package = Path(os.environ.get("KLARA_SPARK_DIR", WORK / "deploy/klara-spark"))
+                    expected_id = str((package / "tei").resolve())
+                require(info.get("model_id") == expected_id, "TEI /info model_id differs from deployed model")
                 self.tei_native = getattr(args, "native", None)
                 require(self.tei_native in (None, "mezzo"), "unsupported TEI aggregation")
                 self.prompt = "Mezzo: max of five independent sigmoid labels on transcript" if self.tei_native else ""

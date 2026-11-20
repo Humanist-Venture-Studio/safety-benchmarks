@@ -1,0 +1,16 @@
+{
+  "slope": 1.619605052488122,
+  "intercept": -0.08511583347297208,
+  "fitted_on": "validation",
+  "identity": {
+    "backend": "ollama",
+    "model": "klara/maxx",
+    "prompt_sha256": "320a4def813986105c7639b541d2c497344bf36494d2830e3c9f5a5066d670f5",
+    "safe_token": " safe",
+    "unsafe_token": " unsafe",
+    "safe_label": "safe",
+    "unsafe_label": "unsafe"
+  },
+  "source_sha256": "1d74634ae719399207bfc68c2b0904c6ca8fc598bda02551a38297b11922c04a",
+  "threshold": 0.01871526077324183
+}

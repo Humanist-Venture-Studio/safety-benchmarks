@@ -1,16 +1,16 @@
 # Klara pipeline
 
-Run from the repository root with Python 3.10+ on macOS or Linux. All commands use the standard library. Scratch inputs and results default to `~/klara-tiers`. Each command accepts `--help`.
+Run from the repository root with Python 3.12 on macOS or Linux. Scoring and recounting use the standard library. Fitting and export use the dependencies in requirements-tuning.txt. Scratch inputs and results default to `~/klara-tiers`. Each command accepts `--help`.
 
 ## Build and check the dataset
 
 ```sh
 k=scripts/klara
 work=~/klara-tiers
-python3 "$k/build_manifest.py" --seeds "$work/seeds/seeds.jsonl" --rules rules-klara.tsv
+python3 "$k/build_manifest.py" --seeds "$work/seeds/seeds.jsonl" --rules data/rules-klara.tsv
 python3 "$k/check_shard.py" "$work/shards/shard-01.written.jsonl"
-python3 "$k/assemble.py" --shards "$work/shards" --output data-klara.tsv
-python3 "$k/overlap.py" --data data-klara.tsv --output "$work/results/overlap.md"
+python3 "$k/assemble.py" --shards "$work/shards" --output "$work/results/reassembled.tsv"
+python3 "$k/overlap.py" --data data/data-klara.tsv --output "$work/results/overlap.md"
 ```
 
 Seed 20261117 fixes allocation. Every shard contains 40 train, five validation and five test scenarios. Each risk seed supplies two unsafe rows for its rule and two linked safe look-alikes. Set rule proportions in the seeds. The manifest prints achieved and weighted target counts. Exactly 10% of unsafe slots are borderline. Safe slots use an empty rule/action, trigger `none` and trigger turn 0.
@@ -22,23 +22,20 @@ Duplicate checks use NFKC, case folding and collapsed whitespace per message. Ch
 ## Score conversations and compare tiers
 
 ```sh
-python3 "$k/score.py" --tier flash --input conversation.json
-python3 "$k/benchmark.py" --tier flash --backend ollama --model klara/flash \
-  --split validation --stage round-2 --output "$work/results/flash-val.tsv"
-python3 "$k/pick_threshold.py" "$work/results/flash-val.tsv"
-python3 "$k/summarise.py" "$work/results" --output "$work/results/tiers.md"
+python3 scripts/klara/heldout_report.py
+python3 scripts/klara/score.py --tier flash --input conversation.json
 ```
 
-`score.py` reads a messages array or an object containing it from a file or stdin. Its JSON contract is `{"unsafe_probability": 0.07, "label": "safe"}`. The label is unsafe at or above `--threshold` (default 0.5). Apply the validation-selected cutoff to deployment and the single final test run. The fixed `train-sample` draws 900 safe and 100 unsafe training rows without replacement. Only conversation messages reach the model.
+The first command recounts the published predictions without calling a model. The second reads a JSON messages array or an object containing it. Use one to five student/tutor pairs with string `role` and `content` fields. The result contains a calibrated `unsafe_probability` and a `label`. Named local winners load their [validation calibrations](calibration/) and classify at their fitted cutoffs. The fixed `train-sample` draws 900 safe and 100 unsafe training rows without replacement. Only conversation messages reach the model.
 
-- **Ollama** serves `klara/flash` and `klara/maxx` at localhost:11434. The system prompt defines unsafe for both speakers and ends with “Reply with exactly one word: safe or unsafe.” The first generated token and its top 20 alternatives must contain both verdict scores. Default matching requires a unique complete token per verdict after trimming and case folding. For split words or ambiguous variants, set exact, distinct `--safe-token` and `--unsafe-token` strings, preserving spaces. The complete generated verdict must agree with its first token. The TSV records both tokens and log-probabilities used in the two-way softmax. [Ollama API types](https://github.com/ollama/ollama/blob/main/api/types.go)
-- **TEI** serves spark at localhost:8080. Set `--model` to the deployed `/info` model ID. Label defaults are `safe` and `unsafe`. For an indexed head, supply its actual mapping, for example `--safe-label LABEL_0 --unsafe-label LABEL_1`. The adapter posts the serialized messages to `/predict` with truncation disabled and takes the softmax of two raw logits. Train the head with the same JSON serialization. [TEI prediction schema](https://github.com/huggingface/text-embeddings-inference/blob/main/router/src/http/types.rs)
+- **Ollama** serves `klara/flash` and `klara/maxx` at localhost:11434. The system prompt defines unsafe for both speakers and ends with “Reply with exactly one word: safe or unsafe.” The first generated token and its top 20 alternatives must contain both verdict scores. The named winners use the exact tokens `" safe"` and `" unsafe"`. For other models, default matching requires a unique complete token per verdict after trimming and case folding. For split words or ambiguous variants, set exact, distinct `--safe-token` and `--unsafe-token` strings, preserving spaces. The complete generated verdict must agree with its first token. The TSV records both tokens and log-probabilities used in the two-way softmax. [Ollama API types](https://github.com/ollama/ollama/blob/main/api/types.go)
+- **TEI** serves spark at localhost:8080. Serve the package’s `tei` directory as described in the root README. Set `KLARA_SPARK_DIR` to the package path if it has moved. For other models, set `--model` to the TEI `/info` model ID. Label defaults are `safe` and `unsafe`. For an indexed head, supply its actual mapping, for example `--safe-label LABEL_0 --unsafe-label LABEL_1`. The adapter posts the serialized messages to `/predict` with truncation disabled and takes the softmax of two raw logits. Train the head with the same JSON serialization. [TEI prediction schema](https://github.com/huggingface/text-embeddings-inference/blob/main/router/src/http/types.rs)
 
 ### Cloud Decisions
 
 The cloud tier sends `model`, `state` and `questions` to `POST /api/alpha/decisions` for `typesafe/jev-1.14`. The endpoint supplies probabilities directly and has no temperature control. Supply the **path** to the credential file using `--key-file` or the `KLARA_OPENROUTER_KEY_FILE` environment variable. [Decisions guide](https://openrouter.ai/docs/guides/features/decisions) · [Request and answer schema](https://openrouter.ai/docs/api/api-reference/alphadecisions/submit-a-decisions-request)
 
-After assembling `data-klara.tsv`, run these commands from the repository root with the credential file path set. The first draws a reproducible 20-row validation sample. The second scores the whole validation split.
+With the published `data/data-klara.tsv`, run these commands from the repository root with the credential file path set. The first draws a reproducible 20-row validation sample. The second scores the whole validation split.
 
 ```sh
 python3 scripts/klara/benchmark.py --tier cloud --split validation --stage prompt-v0 \
@@ -47,7 +44,7 @@ python3 scripts/klara/benchmark.py --tier cloud --split validation --stage promp
   --max-cost 5 --output "$HOME/klara-tiers/results/cloud-v0-validation.tsv"
 ```
 
-The default spec is [cloud-v0.json](prompts/cloud-v0.json). Pass `--prompt-file path/to/cloud-v1.json --stage prompt-v1` for another round. The spec accepts the following fields.
+The benchmark defaults to [cloud-v0.json](prompts/cloud-v0.json). Single-conversation deployment with `score.py --tier cloud` uses [cloud-v1.json](prompts/cloud-v1.json) at 0.70. Pass `--prompt-file path/to/cloud-v1.json --stage prompt-v1` for another round. The spec accepts the following fields.
 
 - `transcript` selects `"lines"` (one `student: …` or `tutor: …` per message) or `"json"` (the compact messages array). Optional `state_prefix` precedes the transcript with a blank line.
 - `questions` maps each name to a Decisions question with `type`, `instructions` and type-specific `criteria`. A `noul` returns the probability of yes. A `choice` uses a map of choices to descriptions. Auxiliary `score` (ordered criteria) and `box` questions can be recorded alongside them.

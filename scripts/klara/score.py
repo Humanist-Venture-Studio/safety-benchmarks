@@ -15,6 +15,10 @@ def main():
     p.add_argument("--input", type=Path)
     args = p.parse_args()
     require(args.tier, "specify --tier")
+    if args.tier == "cloud" and args.prompt_file is None:
+        args.prompt_file = Path(__file__).with_name("prompts") / "cloud-v1.json"
+        if args.threshold is None:
+            args.threshold = 0.70
     obj = json.loads(args.input.read_text(encoding="utf-8")) if args.input else json.load(sys.stdin)
     messages = obj.get("messages") if isinstance(obj, dict) else obj
     require(isinstance(messages, list) and 2 <= len(messages) <= 10, "expected 1..5 student/tutor pairs")
