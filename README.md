@@ -129,4 +129,4 @@ python3 scripts/klara/score.py --tier maxx --input conversation.json
 python3 scripts/klara/score.py --tier cloud --input conversation.json
 ```
 
-[Quality report](reports/klara-quality.md) · [Scoring and training scripts](scripts/klara/README.md) · [Test results and breakdowns](results/klara/test/)
+[Research paper (HTML)](reports/klara-tiers.html) · [PDF](reports/klara-tiers.pdf) · [Quality report](reports/klara-quality.md) · [Scoring and training scripts](scripts/klara/README.md) · [Test results and breakdowns](results/klara/test/)
