@@ -80,7 +80,7 @@ def fold_errors(model, meta):
     return diagnose(rows, meta)
 
 
-def save_recipes(out, meta, commands):
+def save_recipes(out, meta, commands, models):
     """Keep source revisions, selected groups and exact row memberships alongside the local evidence."""
     from spark_experiment import WORK
 
@@ -129,7 +129,7 @@ def save_recipes(out, meta, commands):
         )
     sources = {
         m: json.loads(((source(m) if (source(m) / "source.json").exists() else source(m).parent) / "source.json").read_bytes())
-        for m in LICENSE
+        for m in models
     }
     report = dict(
         source_sha256=json.loads((LOGS / "dataset.json").read_bytes())["source_sha256"],
@@ -377,7 +377,7 @@ def main():
             "| Always safe | Reference | — | 90.0% | 0.00% | 100 | 0% | — | 0.5000 | 0.1000 | 0.1000 | 0 | — | — | — | 0 | 0 |"
         )
         tables[split] = "\n".join(lines)
-    save_recipes(a.out, meta, commands)
+    save_recipes(a.out, meta, commands, models)
     write(a.out / "pass-metadata.tsv", report)
     write(a.out / "metrics.tsv", details)
     write(a.out / "round2-errors.tsv", miss_rows)

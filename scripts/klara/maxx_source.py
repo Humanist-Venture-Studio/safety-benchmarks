@@ -10,7 +10,7 @@ import time
 import urllib.request
 
 from common import WORK, require
-from maxx_space import PINS, reserve, source_weights
+from maxx_space import CANDIDATES, PINS, reserve, source_weights
 
 TOKENIZER_FILES = {"config.json", "tokenizer_config.json", "tokenizer.json", "merges.txt",
                    "vocab.json", "special_tokens_map.json", "added_tokens.json",
@@ -76,5 +76,5 @@ def fetch(model):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("model", choices=PINS)
+    parser.add_argument("model", choices=CANDIDATES)
     fetch(parser.parse_args().model)

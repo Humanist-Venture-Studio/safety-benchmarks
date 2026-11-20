@@ -86,7 +86,7 @@ def report(tier, models=None):
     tables = target / "tables.md"
     content = f'Final dataset SHA-256 `{provenance["source_sha256"]}`.\n\n' + tables.read_text()
     if tier == "maxx":
-        content += "\nQwen3.5-4B replaces Granite Guardian 3.3 8B, measured at 76 backward tokens/s in preflight.\n"
+        content += "\nAlex selected two Maxx candidates on 19 November 2026. Qwen3.5-4B was dropped before benchmarking. It had replaced Granite Guardian 3.3 8B after Granite measured 76 backward tokens/s in preflight.\n"
     for dest in (RESULTS / "tables.md", tables):
         with atomic_text(dest) as out:
             out.write(content)

@@ -6,7 +6,7 @@ import subprocess
 
 os.environ["KLARA_EXPERIMENT_TIER"] = "maxx"
 from common import atomic_text, read_tsv, require
-from maxx_space import PINS, reserve, source_weights
+from maxx_space import CANDIDATES, reserve, source_weights
 from spark_experiment import LOGS, MODELS, OLLAMA, RESULTS, RUNS, service, source
 from tier_data import digest, prepare, verify
 from tier_rounds import invoke, report
@@ -106,7 +106,7 @@ def main():
     if not (LOGS / "dataset.json").exists():
         prepare(LOGS)
     completed = []
-    for model in PINS:
+    for model in CANDIDATES:
         verify(LOGS)
         if not done(model, "score", "r2"):
             run_candidate(model)

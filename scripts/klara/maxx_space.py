@@ -11,6 +11,7 @@ PINS = {
     "qguard8": ("Qwen/Qwen3Guard-Gen-8B", "4505cb1a6f1864f21f8b27f7daf1b9a1aab6edbb"),
     "q35-4": ("Qwen/Qwen3.5-4B", "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a"),
 }
+CANDIDATES = ("phi4", "qguard8")
 LIMIT = 50_000_000_000
 
 

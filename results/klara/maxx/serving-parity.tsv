@@ -2,3 +2,6 @@ model	stage	observations	check	max_absolute_delta
 phi4	baseline	1	native prompt token count on GGUF registration	0
 phi4	r1	5	HF/GGUF IDs, served length and verdict logit margin	0.23711391910910606
 phi4	r2	5	HF/GGUF IDs, served length and verdict logit margin	0.07468042150139809
+qguard8	baseline	1	native prompt token count on GGUF registration	0
+qguard8	r1	5	HF/GGUF IDs, served length and verdict logit margin	0.05478661134839058
+qguard8	r2	5	HF/GGUF IDs, served length and verdict logit margin	0.10850898921489716
